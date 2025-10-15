@@ -1,0 +1,102 @@
+# Main Configuration File
+project_name: "endo-uncertainty-seg"
+experiment_name: "baseline_experiment"
+
+# Paths
+paths:
+  data_root: "data/raw/UT-EndoMRI"
+  processed_data: "data/processed"
+  splits_dir: "data/splits"
+  checkpoint_dir: "experiments/checkpoints"
+  log_dir: "experiments/experiment_logs"
+  results_dir: "experiments/results"
+
+# Random seed for reproducibility
+seed: 42
+
+# Dataset selection
+dataset:
+  name: "UT-EndoMRI"
+  use_dataset_1: false  # Multi-center, multi-rater
+  use_dataset_2: true   # Single-center, single-rater
+
+# Structures to segment
+structures:
+  uterus: true
+  ovaries: true
+  endometriomas: true
+  cysts: false
+  cul_de_sac: false
+
+# MRI sequences to use
+sequences:
+  T1: false
+  T1FS: false
+  T2: false
+  T2FS: true  # Primary sequence for training
+
+# Preprocessing
+preprocessing:
+  target_spacing: [5.0, 5.0, 5.0]  # mm
+  target_size: [128, 128, 32]  # [H, W, D]
+  intensity_clip_percentiles: [1, 99]
+  normalize_method: "min_max"  # Options: min_max, z_score, per_image
+  resampling_order: 3  # 0: nearest, 1: linear, 3: cubic
+
+# Data augmentation
+augmentation:
+  train:
+    random_rotation: 25  # degrees
+    random_translation: 25  # pixels
+    random_flip_prob: 0.5
+    random_elastic_deform: true
+    random_gamma: [0.8, 1.2]
+    random_gaussian_noise: 0.01
+  val:
+    enabled: false
+  test:
+    enabled: false
+
+# Training configuration
+training:
+  batch_size: 2
+  num_workers: 4
+  epochs: 200
+  learning_rate: 0.0001
+  optimizer: "AdamW"
+  weight_decay: 0.00001
+  scheduler: "cosine"
+  warmup_epochs: 10
+
+  # Loss function
+  loss:
+    type: "dice_focal"  # Options: dice, focal, dice_focal, tversky
+    dice_weight: 0.5
+    focal_weight: 0.5
+
+  # Early stopping
+  early_stopping:
+    enabled: true
+    patience: 30
+    monitor: "val_dice"
+    mode: "max"
+
+# Validation
+validation:
+  frequency: 1  # Validate every N epochs
+  metrics:
+    - "dice"
+    - "hausdorff_95"
+    - "surface_dice"
+
+# Logging
+logging:
+  use_wandb: true
+  use_tensorboard: true
+  log_frequency: 10  # Log every N batches
+  save_predictions: true
+  save_frequency: 5  # Save predictions every N epochs
+
+# Device
+device: "cuda"  # Options: cuda, cpu
+mixed_precision: true

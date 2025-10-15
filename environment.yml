@@ -1,0 +1,53 @@
+name: endo-uncertainty
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.10
+  - pip>=23.0
+
+  # CUDA and PyTorch
+  - pytorch::pytorch>=2.0.0
+  - pytorch::torchvision>=0.15.0
+  - pytorch::pytorch-cuda=11.8
+
+  # Scientific Computing
+  - numpy>=1.24.0
+  - scipy>=1.10.0
+  - scikit-learn>=1.3.0
+  - pandas>=2.0.0
+
+  # Visualization
+  - matplotlib>=3.7.0
+  - seaborn>=0.12.0
+  - jupyterlab>=4.0.0
+
+  # Utilities
+  - pyyaml>=6.0
+  - tqdm>=4.65.0
+
+  # Install remaining packages via pip
+  - pip:
+    - pytorch-lightning>=2.0.0
+    - monai>=1.3.0
+    - nibabel>=5.0.0
+    - SimpleITK>=2.2.1
+    - pydicom>=2.3.1
+    - scikit-image>=0.21.0
+    - plotly>=5.14.0
+    - wandb>=0.15.0
+    - tensorboard>=2.13.0
+    - h5py>=3.8.0
+    - coloredlogs>=15.0
+    - python-dotenv>=1.0.0
+    - opencv-python>=4.7.0
+    - albumentations>=1.3.0
+    - statsmodels>=0.14.0
+    - hydra-core>=1.3.0
+    - omegaconf>=2.3.0
+    - pytest>=7.3.0
+    - black>=23.3.0
+    - flake8>=6.0.0

@@ -1,0 +1,182 @@
+# Model Architecture Configuration
+
+model:
+  name: "swin_unetr"  # Options: swin_unetr, unetr, nnunet, attention_unet
+
+  # Input configuration
+  input:
+    in_channels: 1  # Number of input MRI sequences
+    spatial_dims: 3  # 2D or 3D
+
+  # Output configuration
+  output:
+    num_classes: 4  # Background + 3 structures (uterus, ovary, endometrioma)
+    activation: "softmax"  # Options: softmax, sigmoid
+
+  # Swin UNETR specific parameters
+  swin_unetr:
+    img_size: [128, 128, 32]  # [H, W, D]
+    feature_size: 48  # Base feature dimension
+    depths: [2, 2, 2, 2]  # Number of layers in each stage
+    num_heads: [3, 6, 12, 24]  # Number of attention heads per stage
+    norm_name: "instance"  # Options: instance, batch, group
+    drop_rate: 0.0  # Dropout rate
+    attn_drop_rate: 0.0  # Attention dropout rate
+    dropout_path_rate: 0.0  # Stochastic depth rate
+    use_checkpoint: true  # Use gradient checkpointing to save memory
+    spatial_dims: 3
+
+  # UNETR parameters (alternative)
+  unetr:
+    img_size: [128, 128, 32]
+    feature_size: 16
+    hidden_size: 768
+    mlp_dim: 3072
+    num_heads: 12
+    num_layers: 12
+    pos_embed: "perceptron"
+    norm_name: "instance"
+    dropout_rate: 0.0
+
+  # nnU-Net parameters (baseline)
+  nnunet:
+    deep_supervision: true
+    deep_supervision_scales: [[1, 1, 1], [0.5, 0.5, 0.5], [0.25, 0.25, 0.25]]
+
+# Uncertainty estimation configuration
+uncertainty:
+  method: "mc_dropout"  # Options: mc_dropout, ensemble, evidential, tta
+
+  # Monte Carlo Dropout
+  mc_dropout:
+    enabled: true
+    dropout_rate: 0.1  # Dropout probability
+    num_samples: 30  # Number of forward passes at inference
+    dropout_layers: "all"  # Options: all, encoder, decoder
+
+  # Deep Ensembles
+  ensemble:
+    enabled: false
+    num_models: 5  # Number of ensemble members
+    ensemble_method: "mean"  # Options: mean, voting
+
+  # Evidential Deep Learning
+  evidential:
+    enabled: false
+    evidence_activation: "exp"  # Options: exp, softplus
+    annealing_coef: 0.01
+
+  # Test-Time Augmentation
+  tta:
+    enabled: false
+    num_augmentations: 8
+    augmentation_types: ["flip", "rotation"]
+
+  # Calibration
+  calibration:
+    enabled: true
+    method: "temperature_scaling"  # Options: temperature_scaling, platt_scaling
+
+# Loss function configuration
+loss:
+  type: "compound"  # Options: dice, focal, ce, compound, tversky
+
+  # Compound loss (combination of multiple losses)
+  compound:
+    dice_weight: 0.5
+    ce_weight: 0.3
+    focal_weight: 0.2
+
+  # Dice loss
+  dice:
+    smooth: 1e-5
+    include_background: false
+    squared_pred: false
+    reduction: "mean"
+
+  # Focal loss
+  focal:
+    alpha: 0.25
+    gamma: 2.0
+    reduction: "mean"
+
+  # Tversky loss (good for imbalanced classes)
+  tversky:
+    alpha: 0.7  # False negative weight
+    beta: 0.3   # False positive weight
+    smooth: 1e-5
+
+  # Cross-entropy
+  cross_entropy:
+    weight: null  # Class weights [background, uterus, ovary, endometrioma]
+    reduction: "mean"
+
+  # Deep supervision
+  deep_supervision:
+    enabled: false
+    weights: [1.0, 0.5, 0.25]  # Weights for each supervision level
+
+# Optimization configuration
+optimizer:
+  type: "adamw"  # Options: adam, adamw, sgd
+
+  adamw:
+    lr: 0.0001
+    betas: [0.9, 0.999]
+    weight_decay: 0.00001
+    amsgrad: false
+
+  adam:
+    lr: 0.0001
+    betas: [0.9, 0.999]
+    weight_decay: 0.00001
+    amsgrad: false
+
+  sgd:
+    lr: 0.01
+    momentum: 0.9
+    weight_decay: 0.0001
+    nesterov: true
+
+# Learning rate scheduler
+scheduler:
+  type: "cosine"  # Options: cosine, plateau, step, exponential, polynomial
+
+  cosine:
+    T_max: 200  # Maximum number of iterations
+    eta_min: 1e-7  # Minimum learning rate
+    warmup_epochs: 10
+    warmup_start_lr: 1e-6
+
+  plateau:
+    mode: "max"
+    factor: 0.5
+    patience: 10
+    threshold: 0.001
+    min_lr: 1e-7
+
+  step:
+    step_size: 50
+    gamma: 0.1
+
+  polynomial:
+    total_iters: 200
+    power: 0.9
+
+# Regularization
+regularization:
+  l1_lambda: 0.0
+  l2_lambda: 0.00001
+  dropout: 0.1
+
+# Model initialization
+initialization:
+  method: "kaiming_normal"  # Options: kaiming_normal, xavier_uniform, normal
+  pretrained: false
+  pretrained_path: null
+  freeze_encoder: false
+
+# Mixed precision training
+mixed_precision:
+  enabled: true
+  opt_level: "O1"  # Options: O0, O1, O2, O3
