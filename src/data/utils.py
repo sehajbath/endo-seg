@@ -149,23 +149,41 @@ def parse_filename(filename: str) -> Dict[str, str]:
     dataset_id = dataset_patient.split('-')[0]
     patient_id = dataset_patient.split('-')[1]
 
-    info = {
+    info: Dict[str, Optional[str]] = {
         'dataset_id': dataset_id,
         'patient_id': patient_id,
         'full_id': dataset_patient
     }
 
     is_structure_token = False
+    is_sequence_token = False
+    structure_canonical: Optional[str] = None
 
     # Check if it's a label or image
     if len(parts) >= 2:
         # Could be sequence (T1, T2, etc.) or structure (ut, ov, etc.)
-        info['type'] = parts[1]
+        token = parts[1]
+        info['type'] = token
+
+        # Determine if token maps to a known structure
         try:
-            EndoMRIDataInfo.canonical_structure_name(parts[1])
+            structure_canonical = EndoMRIDataInfo.canonical_structure_name(token)
             is_structure_token = True
         except ValueError:
             is_structure_token = False
+
+        # Determine if token corresponds to a known sequence
+        sequence_tokens = {
+            abbrev.upper()
+            for abbrev in EndoMRIDataInfo.SEQUENCE_ABBREV.values()
+        }
+        if token.upper() in sequence_tokens:
+            is_sequence_token = True
+
+    info['is_structure'] = is_structure_token
+    if structure_canonical:
+        info['structure'] = structure_canonical
+    info['is_sequence'] = is_sequence_token
 
     # Check for rater ID (labels only)
     if len(parts) >= 3 and parts[2].startswith('r'):
@@ -173,6 +191,8 @@ def parse_filename(filename: str) -> Dict[str, str]:
         info['is_label'] = True
     else:
         info['is_label'] = is_structure_token
+
+    info['is_unknown'] = not info.get('is_label', False) and not info.get('is_sequence', False)
 
     return info
 
@@ -187,14 +207,16 @@ def get_subject_files(subject_dir: Path) -> Dict[str, List[Path]]:
     Returns:
         Dictionary with 'images' and 'labels' lists
     """
-    files = {'images': [], 'labels': []}
+    files = {'images': [], 'labels': [], 'unknown': []}
 
     for file in subject_dir.glob('*.nii.gz'):
         info = parse_filename(file.name)
         if info['is_label']:
             files['labels'].append(file)
-        else:
+        elif info['is_sequence']:
             files['images'].append(file)
+        else:
+            files['unknown'].append(file)
 
     return files
 
@@ -219,7 +241,8 @@ def get_dataset_statistics(data_root: str, dataset_name: str) -> Dict:
         'num_subjects': 0,
         'sequences': set(),
         'structures': set(),
-        'raters': set()
+        'raters': set(),
+        'unknown_tokens': set()
     }
 
     # Iterate through subject directories
@@ -233,19 +256,29 @@ def get_dataset_statistics(data_root: str, dataset_name: str) -> Dict:
         # Analyze images
         for img_file in files['images']:
             info = parse_filename(img_file.name)
-            stats['sequences'].add(info['type'])
+            if info.get('is_sequence'):
+                stats['sequences'].add(info['type'])
 
         # Analyze labels
         for label_file in files['labels']:
             info = parse_filename(label_file.name)
-            stats['structures'].add(info['type'])
-            if 'rater_id' in info:
+            if info.get('is_structure'):
+                stats['structures'].add(info['type'])
+            if 'rater_id' in info and info['rater_id']:
                 stats['raters'].add(info['rater_id'])
+
+        # Track unknown tokens
+        for unknown_file in files['unknown']:
+            info = parse_filename(unknown_file.name)
+            token = info.get('type')
+            if token:
+                stats['unknown_tokens'].add(token)
 
     # Convert sets to sorted lists
     stats['sequences'] = sorted(list(stats['sequences']))
     stats['structures'] = sorted(list(stats['structures']))
     stats['raters'] = sorted(list(stats['raters']))
+    stats['unknown_tokens'] = sorted(list(stats['unknown_tokens']))
 
     return stats
 
