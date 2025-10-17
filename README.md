@@ -127,9 +127,8 @@ python scripts/explore_data.py \
 ### Basic Dataset Loading
 
 ```python
-from src.data.dataset import EndoMRIDataset
-from src.data.preprocessing import MRIPreprocessor
-from src.data.utils import load_data_splits
+from endo_seg.data import EndoMRIDataset, MRIPreprocessor
+from endo_seg.data import load_data_splits
 
 # Load splits
 splits = load_data_splits("data/splits/split_info.json")
@@ -162,7 +161,7 @@ print(f"Subject ID: {sample['subject_id']}")
 ### Data Preprocessing
 
 ```python
-from src.data.preprocessing import MRIPreprocessor
+from endo_seg.data import MRIPreprocessor
 import numpy as np
 
 # Initialize preprocessor
@@ -220,13 +219,13 @@ processed_img, processed_lbl = preprocessor.preprocess_pair(
 endometriosis-uncertainty-seg/
 ├── configs/              # Configuration files
 ├── data/                 # Data directory (add to .gitignore)
-├── src/                  # Source code
-│   ├── data/            # Data loading and preprocessing
-│   ├── models/          # Model architectures
-│   ├── training/        # Training logic
-│   ├── inference/       # Inference pipeline
-│   ├── visualization/   # Visualization utilities
-│   └── utils/           # General utilities
+├── src/endo_seg/        # Installable package
+│   ├── data/            # Data loading, preprocessing, augmentation
+│   ├── models/          # Metrics and (future) architectures
+│   ├── training/        # Training scaffolding
+│   ├── inference/       # Inference + uncertainty entry points
+│   ├── eval/            # Evaluation/reporting helpers
+│   └── utils/           # Logging, checkpoints, misc utilities
 ├── scripts/             # Executable scripts
 ├── notebooks/           # Jupyter notebooks
 ├── experiments/         # Experiment outputs

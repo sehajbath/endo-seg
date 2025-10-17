@@ -1,15 +1,15 @@
 """
 Create train/validation/test splits for UT-EndoMRI dataset
 """
+import logging
 import argparse
 import sys
 from pathlib import Path
 
-# Add src to path
-sys.path.append(str(Path(__file__).parent.parent))
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.append(str(REPO_ROOT / "src"))
 
-from src.data.utils import create_data_splits
-import logging
+from endo_seg.data.io.splits import create_data_splits
 
 logging.basicConfig(
     level=logging.INFO,

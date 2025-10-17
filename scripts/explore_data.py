@@ -1,25 +1,25 @@
 """
 Exploratory Data Analysis for UT-EndoMRI dataset
 """
+import json
+import logging
 import argparse
 import sys
 from pathlib import Path
-import json
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from collections import defaultdict
 
-# Add src to path
-sys.path.append(str(Path(__file__).parent.parent))
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.append(str(REPO_ROOT / "src"))
 
-from src.data.utils import (
-    load_nifti,
+from endo_seg.data.io.files import (
     get_dataset_statistics,
+    get_subject_files,
+    load_nifti,
     parse_filename,
-    get_subject_files
 )
-import logging
 
 logging.basicConfig(
     level=logging.INFO,
