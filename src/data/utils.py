@@ -155,17 +155,24 @@ def parse_filename(filename: str) -> Dict[str, str]:
         'full_id': dataset_patient
     }
 
+    is_structure_token = False
+
     # Check if it's a label or image
     if len(parts) >= 2:
         # Could be sequence (T1, T2, etc.) or structure (ut, ov, etc.)
         info['type'] = parts[1]
+        try:
+            EndoMRIDataInfo.canonical_structure_name(parts[1])
+            is_structure_token = True
+        except ValueError:
+            is_structure_token = False
 
     # Check for rater ID (labels only)
     if len(parts) >= 3 and parts[2].startswith('r'):
         info['rater_id'] = parts[2]
         info['is_label'] = True
     else:
-        info['is_label'] = False
+        info['is_label'] = is_structure_token
 
     return info
 
