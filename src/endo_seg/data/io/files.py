@@ -17,6 +17,14 @@ from ..core.structures import EndoMRIDataInfo
 
 logger = logging.getLogger(__name__)
 
+KNOWN_SEQUENCE_TOKENS = {
+    abbrev.lower() for abbrev in EndoMRIDataInfo.SEQUENCE_ABBREV.values()
+}
+KNOWN_STRUCTURE_TOKENS = {
+    abbrev.lower() for abbrev in EndoMRIDataInfo.STRUCTURE_ABBREV.values()
+}
+IGNORED_TOKENS = {"pat"}
+
 
 def load_nifti(file_path: str) -> Tuple[np.ndarray, nib.Nifti1Image]:
     """Load a NIfTI file and return the numpy array and image object."""
@@ -58,42 +66,45 @@ def parse_filename(filename: str) -> Dict[str, str]:
         'full_id': dataset_patient
     }
 
-    is_structure_token = False
-    is_sequence_token = False
-    structure_canonical: Optional[str] = None
-
     # Check if it's a label or image
     if len(parts) >= 2:
         # Could be sequence (T1, T2, etc.) or structure (ut, ov, etc.)
-        token = parts[1]
+        token = parts[1].strip()
+        token_lower = token.lower()
         info['type'] = token
 
-        # Determine if token maps to a known structure
-        try:
-            structure_canonical = EndoMRIDataInfo.canonical_structure_name(token)
-            is_structure_token = True
-        except ValueError:
-            is_structure_token = False
+        if token_lower in IGNORED_TOKENS:
+            info['is_ignored'] = True
+            info['is_label'] = False
+            info['is_sequence'] = False
+            info['is_structure'] = False
+            info['is_unknown'] = True
+            return info
 
-        # Determine if token corresponds to a known sequence
-        sequence_tokens = {
-            abbrev.upper()
-            for abbrev in EndoMRIDataInfo.SEQUENCE_ABBREV.values()
-        }
-        if token.upper() in sequence_tokens:
-            is_sequence_token = True
+        is_sequence = token_lower in KNOWN_SEQUENCE_TOKENS
+        is_structure = token_lower in KNOWN_STRUCTURE_TOKENS
 
-    info['is_structure'] = is_structure_token
-    if structure_canonical:
-        info['structure'] = structure_canonical
-    info['is_sequence'] = is_sequence_token
+        info['is_sequence'] = is_sequence
+        info['is_structure'] = is_structure
+
+        if is_sequence:
+            info['sequence'] = EndoMRIDataInfo.get_sequence_abbrev(token)
+
+        if is_structure:
+            canonical = EndoMRIDataInfo.canonical_structure_name(token_lower)
+            info['structure'] = canonical
+            info['is_label'] = True
+        else:
+            info['is_label'] = False
+    else:
+        info['is_sequence'] = False
+        info['is_structure'] = False
+        info['is_label'] = False
 
     # Check for rater ID (labels only)
     if len(parts) >= 3 and parts[2].startswith('r'):
         info['rater_id'] = parts[2]
         info['is_label'] = True
-    else:
-        info['is_label'] = is_structure_token
 
     info['is_unknown'] = not info.get('is_label', False) and not info.get('is_sequence', False)
 
@@ -106,6 +117,8 @@ def get_subject_files(subject_dir: Path) -> Dict[str, List[Path]]:
 
     for file in subject_dir.glob("*.nii.gz"):
         info = parse_filename(file.name)
+        if info.get('is_ignored'):
+            continue
         files["labels" if info["is_label"] else "images"].append(file)
 
     return files
