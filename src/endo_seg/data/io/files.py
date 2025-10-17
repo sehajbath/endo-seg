@@ -33,28 +33,69 @@ def save_nifti(data: np.ndarray, affine: np.ndarray, file_path: str) -> None:
 
 def parse_filename(filename: str) -> Dict[str, str]:
     """
-    Parse UT-EndoMRI filenames to extract metadata components.
+    Parse UT-EndoMRI filename to extract metadata
+
+    Format: D[dataset_id]-[patient_id]_[sequence/structure]_r[rater_id].nii.gz
+
+    Args:
+        filename: Filename to parse
+
+    Returns:
+        Dictionary with parsed components
     """
-    name = filename.replace(".nii.gz", "").replace(".nii", "")
-    parts = name.split("_")
+    # Remove extension
+    name = filename.replace('.nii.gz', '').replace('.nii', '')
+    parts = name.split('_')
 
+    # Parse dataset and patient ID
     dataset_patient = parts[0]
-    dataset_id, patient_id = dataset_patient.split("-")
+    dataset_id = dataset_patient.split('-')[0]
+    patient_id = dataset_patient.split('-')[1]
 
-    info: Dict[str, str] = {
-        "dataset_id": dataset_id,
-        "patient_id": patient_id,
-        "full_id": dataset_patient,
+    info: Dict[str, Optional[str]] = {
+        'dataset_id': dataset_id,
+        'patient_id': patient_id,
+        'full_id': dataset_patient
     }
 
-    if len(parts) >= 2:
-        info["type"] = parts[1]
+    is_structure_token = False
+    is_sequence_token = False
+    structure_canonical: Optional[str] = None
 
-    if len(parts) >= 3 and parts[2].startswith("r"):
-        info["rater_id"] = parts[2]
-        info["is_label"] = True
+    # Check if it's a label or image
+    if len(parts) >= 2:
+        # Could be sequence (T1, T2, etc.) or structure (ut, ov, etc.)
+        token = parts[1]
+        info['type'] = token
+
+        # Determine if token maps to a known structure
+        try:
+            structure_canonical = EndoMRIDataInfo.canonical_structure_name(token)
+            is_structure_token = True
+        except ValueError:
+            is_structure_token = False
+
+        # Determine if token corresponds to a known sequence
+        sequence_tokens = {
+            abbrev.upper()
+            for abbrev in EndoMRIDataInfo.SEQUENCE_ABBREV.values()
+        }
+        if token.upper() in sequence_tokens:
+            is_sequence_token = True
+
+    info['is_structure'] = is_structure_token
+    if structure_canonical:
+        info['structure'] = structure_canonical
+    info['is_sequence'] = is_sequence_token
+
+    # Check for rater ID (labels only)
+    if len(parts) >= 3 and parts[2].startswith('r'):
+        info['rater_id'] = parts[2]
+        info['is_label'] = True
     else:
-        info["is_label"] = False
+        info['is_label'] = is_structure_token
+
+    info['is_unknown'] = not info.get('is_label', False) and not info.get('is_sequence', False)
 
     return info
 
