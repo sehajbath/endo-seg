@@ -130,28 +130,34 @@ def validate(
     with torch.no_grad():
         for step, batch in enumerate(loader, start=1):
             images = batch["image"].to(device)
-            labels = batch["label"].to(device).long() 
+            labels = batch["label"].to(device).long()
+            if labels.ndim == 4:
+                labels = labels.unsqueeze(1)  # [B, 1, H, W, D]
 
-            # FIX: ensure labels have a channel dim
-            if labels.ndim == 4:            # [B, H, W, D]
-                labels = labels.unsqueeze(1)  # -> [B, 1, H, W, D]
-                
             logits = model.infer_sliding_window(images)
 
             preds = decollate_batch(logits)
             ground_truth = decollate_batch(labels)
+
             preds = [post_pred(p) for p in preds]
             ground_truth = [post_label(g) for g in ground_truth]
+
             dice_metric(y_pred=preds, y=ground_truth)
 
             if step % 5 == 0 or step == len(loader):
-                dice_val = dice_metric.aggregate()
+                dice_val = dice_metric.aggregate()  # may be tensor or (tensor, not_nans)
+                if isinstance(dice_val, tuple):
+                    dice_val, _ = dice_val
                 print(
-                    f"Val Epoch [{epoch}/{max_epochs}] Step [{step}/{len(loader)}] Dice: {dice_val.mean().item():.4f}",
+                    f"Val Epoch [{epoch}/{max_epochs}] Step [{step}/{len(loader)}] "
+                    f"Dice: {dice_val.mean().item():.4f}",
                     flush=True,
                 )
 
     dice_scores = dice_metric.aggregate()
+    if isinstance(dice_scores, tuple):
+        dice_scores, _ = dice_scores
+
     mean_dice = dice_scores.mean().item()
     dice_metric.reset()
     return dice_scores, mean_dice
