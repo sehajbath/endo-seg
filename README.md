@@ -24,8 +24,8 @@ This project extends the work from [Liang et al. (2025)](https://www.nature.com/
 
 ```bash
 # Clone repository
-git clone https://github.com/
-cd endo-uncertainty-seg
+git clone https://github.com/sehajbath/endo-seg
+cd endo-seg
 
 # Create conda environment
 conda env create -f environment.yml
@@ -39,8 +39,8 @@ pip install -e .
 
 ```bash
 # Clone repository
-git clone https://github.com/
-cd endo-uncertainty-seg
+git clone https://github.com/sehajbath/endo-seg
+cd endo-seg
 
 # Create virtual environment
 python -m venv venv
@@ -72,7 +72,7 @@ unzip UT-EndoMRI.zip
 cd ../..
 ```
 
-Your data directory should now look like:
+The data directory should now look like:
 ```
 data/raw/UT-EndoMRI/
 ├── D1_MHS/          # Dataset 1: Multi-center, multi-rater
@@ -216,11 +216,12 @@ processed_img, processed_lbl = preprocessor.preprocess_pair(
 ## Project Structure
 
 ```
-endometriosis-uncertainty-seg/
+endo-seg/
 ├── configs/              # Configuration files
 ├── data/                 # Data directory (add to .gitignore)
 ├── src/endo_seg/        # Installable package
-│   ├── data/            # Data loading, preprocessing, augmentation
+│   ├── data/            # Data loading, preprocessing augmentation
+|   ├──config/           # Configuration loading and management utilities
 │   ├── models/          # Metrics and (future) architectures
 │   ├── training/        # Training scaffolding
 │   ├── inference/       # Inference + uncertainty entry points
@@ -236,11 +237,9 @@ endometriosis-uncertainty-seg/
 
 After completing Phase 1 setup:
 
-1. **Phase 2:** Reproduce nnU-Net baseline
-2. **Phase 3:** Implement Transformer architecture (Swin UNETR)
-3. **Phase 4:** Add uncertainty quantification (MC Dropout, Ensembles)
-4. **Phase 5:** Training and evaluation
-5. **Phase 6:** Clinical validation and analysis
+1. **Phase 2:** Implement Transformer architecture (Swin UNETR)
+2. **Phase 3:** Add uncertainty quantification (MC Dropout, Ensembles)
+3. **Phase 4:** Training and evaluation
 
 ## License
 
