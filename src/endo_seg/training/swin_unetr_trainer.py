@@ -131,6 +131,11 @@ def validate(
         for step, batch in enumerate(loader, start=1):
             images = batch["image"].to(device)
             labels = batch["label"].to(device).long() 
+
+            # FIX: ensure labels have a channel dim
+            if labels.ndim == 4:            # [B, H, W, D]
+                labels = labels.unsqueeze(1)  # -> [B, 1, H, W, D]
+                
             logits = model.infer_sliding_window(images)
 
             preds = decollate_batch(logits)
