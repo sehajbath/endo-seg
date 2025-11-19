@@ -82,6 +82,10 @@ def train_one_epoch(
         images = batch["image"].to(device)
         labels = batch["label"].to(device)
 
+        # FIX: ensure labels have a channel dimension so shape matches logits
+        if labels.ndim == 4:          # [B, H, W, D]
+            labels = labels.unsqueeze(1)  # -> [B, 1, H, W, D]
+
         optimizer.zero_grad(set_to_none=True)
         with torch.cuda.amp.autocast(enabled=mixed_precision):
             logits = model(images)
