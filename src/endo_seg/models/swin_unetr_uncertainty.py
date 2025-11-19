@@ -20,7 +20,7 @@ class SwinUNETRWithUncertainty(nn.Module):
 
     def __init__(
         self,
-        img_size: Sequence[int],
+        #img_size: Sequence[int],
         in_channels: int,
         out_channels: int,
         feature_size: int = 48,
@@ -36,7 +36,7 @@ class SwinUNETRWithUncertainty(nn.Module):
         super().__init__()
         self.device = torch.device(device)
         self.backbone = SwinUNETR(
-            img_size=img_size,
+            #img_size=img_size,
             in_channels=in_channels,
             out_channels=out_channels,
             feature_size=feature_size,
