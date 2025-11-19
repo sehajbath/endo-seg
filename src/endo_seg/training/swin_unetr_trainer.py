@@ -80,7 +80,7 @@ def train_one_epoch(
     start = time.time()
     for step, batch in enumerate(loader, start=1):
         images = batch["image"].to(device)
-        labels = batch["label"].to(device)
+        labels = batch["label"].to(device).long() 
 
         # FIX: ensure labels have a channel dimension so shape matches logits
         if labels.ndim == 4:          # [B, H, W, D]
@@ -130,7 +130,7 @@ def validate(
     with torch.no_grad():
         for step, batch in enumerate(loader, start=1):
             images = batch["image"].to(device)
-            labels = batch["label"].to(device)
+            labels = batch["label"].to(device).long() 
             logits = model.infer_sliding_window(images)
 
             preds = decollate_batch(logits)
