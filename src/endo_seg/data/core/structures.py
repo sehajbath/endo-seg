@@ -4,10 +4,14 @@ Structure metadata and utilities for UT-EndoMRI segmentation.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Set
 
 import numpy as np
+from scipy import ndimage
+
+logger = logging.getLogger(__name__)
 
 
 class EndoMRIDataInfo:
@@ -102,25 +106,30 @@ def canonicalize_structure_list(structures: List[str]) -> List[str]:
     return canonical_structures
 
 
+def _resize_label(label: np.ndarray, target_shape: np.ndarray) -> np.ndarray:
+    zoom = [t / s for s, t in zip(label.shape, target_shape)]
+    if any(z <= 0 for z in zoom):
+        raise ValueError(f"Invalid zoom factors {zoom} for shapes {label.shape}->{target_shape}")
+    return ndimage.zoom(label, zoom=zoom, order=0, mode="nearest")
+
+
 def merge_structure_labels(
     label_dict: Dict[str, Optional[np.ndarray]],
     structure_to_index: Optional[Dict[str, int]] = None,
 ) -> np.ndarray:
-    """
-    Merge structure-specific label volumes into a multi-class label map.
-    """
+    """Merge structure-specific label volumes into a multi-class label map."""
     mapping = structure_to_index or EndoMRIDataInfo.STRUCTURE_CLASS_INDEX
 
     shape = None
     for label in label_dict.values():
         if label is not None:
-            shape = label.shape
+            shape = np.array(label.shape, dtype=np.int64)
             break
 
     if shape is None:
         raise ValueError("No valid labels found to merge.")
 
-    merged = np.zeros(shape, dtype=np.int32)
+    merged = np.zeros(tuple(shape), dtype=np.int32)
 
     for struct_name, label in label_dict.items():
         if label is None:
@@ -129,6 +138,15 @@ def merge_structure_labels(
         canonical = EndoMRIDataInfo.canonical_structure_name(struct_name)
         if canonical not in mapping:
             continue
+
+        if label.shape != tuple(shape):
+            logger.warning(
+                "Label shape mismatch for %s (got %s, expected %s); resizing with nearest neighbor",
+                struct_name,
+                label.shape,
+                tuple(shape),
+            )
+            label = _resize_label(label, shape)
 
         merged[label > 0] = mapping[canonical]
 
