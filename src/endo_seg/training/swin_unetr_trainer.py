@@ -8,8 +8,9 @@ from dataclasses import dataclass
 from typing import Dict, List, Sequence, Tuple
 
 import torch
+import torch.nn as nn
 from monai.data import decollate_batch
-from monai.losses import DiceCELoss
+from monai.losses import DiceLoss
 from monai.metrics import DiceMetric
 from monai.transforms import AsDiscrete
 from monai.utils.enums import MetricReduction
@@ -44,19 +45,29 @@ def create_optimizer_and_scheduler(model: torch.nn.Module, config: Dict) -> Tupl
     return optimizer, scheduler
 
 
-def build_loss_and_metrics(config: Dict) -> Tuple[DiceCELoss, DiceMetric, AsDiscrete, AsDiscrete]:
-    class_weights = config.get("class_weights")
-    ce_weight = None
-    if class_weights is not None:
-        ce_weight = torch.tensor(class_weights, dtype=torch.float32)
+class DiceCEWithWeights(nn.Module):
+    """Combine Dice loss with weighted cross entropy to stabilize rare classes."""
 
-    loss_fn = DiceCELoss(
-        to_onehot_y=True,
-        softmax=True,
-        squared_pred=True,
-        batch=True,
-        ce_weight=ce_weight,
-    )
+    def __init__(self, class_weights: Sequence[float] | None = None) -> None:
+        super().__init__()
+        self.dice = DiceLoss(
+            to_onehot_y=True,
+            softmax=True,
+            squared_pred=True,
+        )
+        weight = torch.tensor(class_weights, dtype=torch.float32) if class_weights is not None else None
+        self.ce = nn.CrossEntropyLoss(weight=weight)
+
+    def forward(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        dice_loss = self.dice(logits, labels)
+        target = labels.squeeze(1) if labels.ndim == logits.ndim else labels
+        ce_loss = self.ce(logits, target)
+        return dice_loss + ce_loss
+
+
+def build_loss_and_metrics(config: Dict) -> Tuple[nn.Module, DiceMetric, AsDiscrete, AsDiscrete]:
+    class_weights = config.get("class_weights")
+    loss_fn = DiceCEWithWeights(class_weights)
     dice_metric = DiceMetric(
         include_background=True,
         reduction=MetricReduction.MEAN_BATCH,
@@ -71,7 +82,7 @@ def train_one_epoch(
     model: torch.nn.Module,
     loader: torch.utils.data.DataLoader,
     optimizer: torch.optim.Optimizer,
-    loss_fn: DiceCELoss,
+    loss_fn: nn.Module,
     device: torch.device,
     epoch: int,
     max_epochs: int,
