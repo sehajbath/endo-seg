@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, List, Sequence, Tuple
 
 import torch
 from monai.data import decollate_batch
@@ -45,11 +45,17 @@ def create_optimizer_and_scheduler(model: torch.nn.Module, config: Dict) -> Tupl
 
 
 def build_loss_and_metrics(config: Dict) -> Tuple[DiceCELoss, DiceMetric, AsDiscrete, AsDiscrete]:
+    class_weights = config.get("class_weights")
+    ce_weight = None
+    if class_weights is not None:
+        ce_weight = torch.tensor(class_weights, dtype=torch.float32)
+
     loss_fn = DiceCELoss(
         to_onehot_y=True,
         softmax=True,
         squared_pred=True,
         batch=True,
+        ce_weight=ce_weight,
     )
     dice_metric = DiceMetric(
         include_background=True,
@@ -80,11 +86,10 @@ def train_one_epoch(
     start = time.time()
     for step, batch in enumerate(loader, start=1):
         images = batch["image"].to(device)
-        labels = batch["label"].to(device).long() 
+        labels = batch["label"].to(device).long()
 
-        # FIX: ensure labels have a channel dimension so shape matches logits
-        if labels.ndim == 4:          # [B, H, W, D]
-            labels = labels.unsqueeze(1)  # -> [B, 1, H, W, D]
+        if labels.ndim == 4:
+            labels = labels.unsqueeze(1)
 
         optimizer.zero_grad(set_to_none=True)
         with torch.cuda.amp.autocast(enabled=mixed_precision):
@@ -145,9 +150,10 @@ def validate(
             dice_metric(y_pred=preds, y=ground_truth)
 
             if step % 5 == 0 or step == len(loader):
-                dice_val = dice_metric.aggregate()  # may be tensor or (tensor, not_nans)
+                dice_val = dice_metric.aggregate()
                 if isinstance(dice_val, tuple):
                     dice_val, _ = dice_val
+                dice_val = dice_val.detach().cpu()
                 print(
                     f"Val Epoch [{epoch}/{max_epochs}] Step [{step}/{len(loader)}] "
                     f"Dice: {dice_val.mean().item():.4f}",
@@ -158,6 +164,7 @@ def validate(
     if isinstance(dice_scores, tuple):
         dice_scores, _ = dice_scores
 
+    dice_scores = dice_scores.detach().cpu()
     mean_dice = dice_scores.mean().item()
     dice_metric.reset()
     return dice_scores, mean_dice
@@ -199,12 +206,22 @@ def train_loop(
     mixed_precision = config.get("mixed_precision", True)
     optimizer, scheduler = create_optimizer_and_scheduler(model, config)
     loss_fn, dice_metric, post_pred, post_label = build_loss_and_metrics(config)
+    loss_fn = loss_fn.to(device)
     scaler = torch.cuda.amp.GradScaler(enabled=mixed_precision)
 
     checkpoint_dir = config.get("checkpoint_dir", "checkpoints")
-    best_score = 0.0
-    history = {"train_loss": [], "val_dice": [], "val_epochs": []}
+    best_score = float("-inf")
+    history = {"train_loss": [], "val_dice": [], "val_epochs": [], "priority_dice": [], "val_class_dice": []}
     val_every = config.get("save_frequency", 5)
+    patience = config.get("target_metric_patience")
+    epochs_without_improve = 0
+
+    priority_classes: Sequence[int] = config.get("priority_classes", [2, 3])
+    if isinstance(priority_classes, int):
+        priority_classes = [priority_classes]
+    priority_classes = [c for c in priority_classes if 0 <= c < config["num_classes"]]
+    if not priority_classes:
+        priority_classes = list(range(config["num_classes"]))
 
     for epoch in range(1, epochs + 1):
         train_loss = train_one_epoch(
@@ -224,7 +241,7 @@ def train_loop(
         scheduler.step()
 
         if epoch % val_every == 0 or epoch == epochs:
-            _, mean_dice = validate(
+            dice_scores, mean_dice = validate(
                 model,
                 val_loader,
                 device,
@@ -236,20 +253,29 @@ def train_loop(
             )
             history["val_dice"].append(mean_dice)
             history["val_epochs"].append(epoch)
+            history["val_class_dice"].append(dice_scores.tolist())
+
+            selected = dice_scores[priority_classes].mean().item()
+            history["priority_dice"].append(selected)
+            print(
+                f"Target-class Dice ({priority_classes}) at epoch {epoch}: {selected:.4f} (mean Dice {mean_dice:.4f})",
+                flush=True,
+            )
 
             latest_path = save_checkpoint(
                 model,
                 optimizer,
                 scheduler,
                 epoch,
-                mean_dice,
+                selected,
                 checkpoint_dir,
                 "latest.pth",
             )
             print(f"Saved checkpoint: {latest_path}")
 
-            if mean_dice > best_score:
-                best_score = mean_dice
+            if selected > best_score:
+                best_score = selected
+                epochs_without_improve = 0
                 best_path = save_checkpoint(
                     model,
                     optimizer,
@@ -259,7 +285,18 @@ def train_loop(
                     checkpoint_dir,
                     "best.pth",
                 )
-                print(f"New best Dice {best_score:.4f}. Saved: {best_path}")
+                print(
+                    f"New best target Dice {best_score:.4f} (priority classes {priority_classes}). Saved: {best_path}",
+                    flush=True,
+                )
+            else:
+                epochs_without_improve += 1
+                if patience is not None and epochs_without_improve >= patience:
+                    print(
+                        f"Early stopping triggered after {patience} validation checks without target metric improvement.",
+                        flush=True,
+                    )
+                    break
 
     return history
 
