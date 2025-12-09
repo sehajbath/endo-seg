@@ -355,30 +355,30 @@
 
 from monai.transforms import (
     Compose,
-    LoadImaged,
+    # LoadImaged,
     RandCropByLabelClassesd,
     RandFlipd,
-    RandSpatialRotationd,
+    RandRotated,
     RandZoomd,
-    ScaleIntensityRanged,
-    SpatialPadd,
-    CropForegroundd,
-    Orientationd,
-    NormalizeIntensityd,
-    EnsureChannelFirstd,
-    Spacingd,
+    # ScaleIntensityRanged,
+    # SpatialPadd,
+    # CropForegroundd,
+    # Orientationd,
+    # NormalizeIntensityd,
+    # EnsureChannelFirstd,
+    # Spacingd,
     EnsureTyped,
     RandAdjustContrastd,
     RandGaussianNoised,
-    RandScaleIntensityd,
-    RandShiftIntensityd,
-    RandGibbsNoised,
-    RandKSpaceSpikeNoised,
-    RandBiasFieldd,
-    RandStdShiftIntensityd,
-    RandGaussianSmoothd,
-    RandElasticDeformationd,
-    RandGammaContrastd,
+    # RandScaleIntensityd,
+    # RandShiftIntensityd,
+    # RandGibbsNoised,
+    # RandKSpaceSpikeNoised,
+    # RandBiasFieldd,
+    # RandStdShiftIntensityd,
+    # RandGaussianSmoothd,
+    Rand2DElasticd,
+    RandAdjustContrastd,
 )
 from monai.data import decollate_batch
 import numpy as np
@@ -414,7 +414,7 @@ def get_train_transforms(augmentation_cfg: dict, roi_size: tuple[int, int, int])
         transforms_list.append(RandFlipd(keys=["image", "label"], prob=augmentation_cfg["random_flip_prob"], spatial_axis=2))
 
     if augmentation_cfg.get("random_rotation", 0) > 0:
-        transforms_list.append(RandSpatialRotationd(
+        transforms_list.append(RandRotated(
             keys=["image", "label"],
             range_x=np.pi / 180 * augmentation_cfg["random_rotation"],
             range_y=np.pi / 180 * augmentation_cfg["random_rotation"],
@@ -428,9 +428,8 @@ def get_train_transforms(augmentation_cfg: dict, roi_size: tuple[int, int, int])
         transforms_list.append(RandZoomd(keys=["image", "label"], min_zoom=0.9, max_zoom=1.1, prob=0.5))
 
     if augmentation_cfg.get("random_elastic_deform", False):
-        transforms_list.append(RandElasticDeformationd(
+        transforms_list.append(Rand2DElasticd(
             keys=["image", "label"],
-            sigma_range=(5, 8),
             magnitude_range=(100, 200),
             prob=0.3,
             padding_mode="border",
@@ -438,7 +437,7 @@ def get_train_transforms(augmentation_cfg: dict, roi_size: tuple[int, int, int])
         ))
 
     if augmentation_cfg.get("random_gamma"):
-        transforms_list.append(RandGammaContrastd(keys="image", prob=0.5, gamma=augmentation_cfg["random_gamma"])) 
+        transforms_list.append(RandAdjustContrastd(keys="image", prob=0.5, gamma=augmentation_cfg["random_gamma"])) 
 
     if augmentation_cfg.get("random_gaussian_noise", 0) > 0:
         transforms_list.append(RandGaussianNoised(keys="image", prob=0.3, mean=0.0, std=augmentation_cfg["random_gaussian_noise"])) 
