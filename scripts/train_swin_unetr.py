@@ -87,6 +87,10 @@ def ensure_splits(config: Dict, args: argparse.Namespace) -> Tuple[Dict, Path]:
     stratified = split_cfg.get("stratified", True) and not args.no_stratified
     use_paper = split_cfg.get("use_paper_split", False)
 
+    sequence_cfg = config.get("sequences", {})
+    enabled_sequences = [seq for seq, enabled in sequence_cfg.items() if enabled]
+    primary_sequence = enabled_sequences[0] if enabled_sequences else None
+
     split_dir = Path(config["paths"].get("splits_dir", "data/splits"))
     split_dir.mkdir(parents=True, exist_ok=True)
     split_tag = "paper" if use_paper else ("strat" if stratified else "random")
@@ -113,6 +117,7 @@ def ensure_splits(config: Dict, args: argparse.Namespace) -> Tuple[Dict, Path]:
                 test_ratio=split_cfg.get("test_ratio", 0.15),
                 seed=seed,
                 stratified=stratified,
+                primary_sequence=primary_sequence,
             )
     else:
         splits = load_data_splits(str(split_path))

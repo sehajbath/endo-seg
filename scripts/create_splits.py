@@ -73,6 +73,12 @@ def main():
         help="Enable patient-level stratified splits (default: enabled)",
     )
     parser.add_argument(
+        "--primary_sequence",
+        type=str,
+        default=None,
+        help="Only include subjects that have this MRI sequence (e.g., T2FS)",
+    )
+    parser.add_argument(
         "--use_paper_split",
         action="store_true",
         help="Use the exact split from the paper for D2_TCPW"
@@ -138,6 +144,7 @@ def main():
             test_ratio=args.test_ratio,
             seed=args.seed,
             stratified=args.stratified,
+            primary_sequence=args.primary_sequence,
         )
 
     logger.info("=" * 60)

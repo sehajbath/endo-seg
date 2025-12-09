@@ -42,6 +42,19 @@ def _load_structure_labels(subject_dir: Path, structures: Sequence[str]) -> Dict
     return label_dict
 
 
+def _has_primary_sequence(subject_dir: Path, primary_sequence: Optional[str]) -> bool:
+    if primary_sequence is None:
+        return True
+
+    data_dict = get_subject_data_dict(
+        subject_dir,
+        sequences=[primary_sequence],
+        structures=[],
+        rater_id=None,
+    )
+    return data_dict.get(f"image_{primary_sequence}") is not None
+
+
 def compute_patient_label_stats(
     data_root: str,
     dataset_name: str = "D2_TCPW",
@@ -195,15 +208,25 @@ def create_data_splits(
     test_ratio: float = 0.15,
     seed: int = 42,
     stratified: bool = True,
+    primary_sequence: Optional[str] = None,
 ) -> Dict[str, List[str]]:
     """Create (optionally stratified) data splits and persist them to disk."""
     if not np.isclose(train_ratio + val_ratio + test_ratio, 1.0):
         raise ValueError("Train/val/test ratios must sum to 1.0.")
 
     dataset_path = Path(data_root) / dataset_name
-    subject_ids = sorted(
-        subject_dir.name for subject_dir in dataset_path.iterdir() if subject_dir.is_dir()
-    )
+    subject_ids: List[str] = []
+    for subject_dir in sorted(dataset_path.iterdir()):
+        if not subject_dir.is_dir():
+            continue
+        if not _has_primary_sequence(subject_dir, primary_sequence):
+            logger.warning(
+                "Skipping %s because sequence %s is unavailable",
+                subject_dir.name,
+                primary_sequence,
+            )
+            continue
+        subject_ids.append(subject_dir.name)
 
     split_summary: Optional[SplitSummary] = None
     patient_stats: Optional[PatientStats] = None
