@@ -331,8 +331,8 @@ def get_train_transforms(config: Dict, roi_size: Optional[Sequence[int]] = None)
 
     label_crop_cfg = config.get("label_crop", {})
     if label_crop_cfg.get("enabled") and roi_size is not None:
-        crop_roi = label_crop_cfg.get("roi_size", roi_size)
-        ratios = label_crop_cfg.get("ratios", [0.05, 0.2, 0.4, 0.35])
+        crop_roi = label_crop_cfg.get("roi_size")
+        ratios = label_crop_cfg.get("ratios")
         num_classes = label_crop_cfg.get("num_classes")
         transforms.append(
             LabelAwareCrop(
