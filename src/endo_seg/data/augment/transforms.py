@@ -287,32 +287,31 @@ class LabelAwareCrop:
         allow_smaller: bool = True,
     ) -> None:
         ratio_list = list(ratios)
-        effective_num_classes: Optional[int] = None
-        if num_classes is not None:
-            if num_classes <= 0:
-                logger.warning("label-aware crop received non-positive num_classes=%d; inferring from data instead.", num_classes)
-            else:
-                if len(ratio_list) != num_classes:
-                    logger.warning(
-                        "label-aware crop ratios length (%d) mismatches num_classes (%d); adjusting ratios.",
-                        len(ratio_list),
-                        num_classes,
-                    )
-                    if num_classes < len(ratio_list):
-                        ratio_list = ratio_list[:num_classes]
-                    else:
-                        ratio_list.extend([ratio_list[-1]] * (num_classes - len(ratio_list)))
-                effective_num_classes = num_classes
+        kwargs = {
+            "keys": ("image", "label"),
+            "label_key": "label",
+            "spatial_size": tuple(int(v) for v in roi_size),
+            "ratios": ratio_list,
+            "num_samples": max(1, int(num_samples)),
+            "allow_smaller": allow_smaller,
+        }
+        if num_classes is not None and num_classes > 0:
+            if len(ratio_list) != num_classes:
+                logger.warning(
+                    "label-aware crop ratios length (%d) mismatches num_classes (%d); adjusting ratios.",
+                    len(ratio_list),
+                    num_classes,
+                )
+                if num_classes < len(ratio_list):
+                    ratio_list = ratio_list[:num_classes]
+                else:
+                    ratio_list.extend([ratio_list[-1]] * (num_classes - len(ratio_list)))
+                kwargs["ratios"] = ratio_list
+            kwargs["num_classes"] = num_classes
+        elif num_classes is not None and num_classes <= 0:
+            logger.warning("label-aware crop received non-positive num_classes=%d; inferring from data instead.", num_classes)
 
-        self.cropper = RandCropByLabelClassesd(
-            keys=("image", "label"),
-            label_key="label",
-            spatial_size=tuple(int(v) for v in roi_size),
-            ratios=ratio_list,
-            num_classes=effective_num_classes,
-            num_samples=max(1, int(num_samples)),
-            allow_smaller=allow_smaller,
-        )
+        self.cropper = RandCropByLabelClassesd(**kwargs)
 
     def __call__(self, sample: Dict) -> Dict:
         cropped = self.cropper(sample)

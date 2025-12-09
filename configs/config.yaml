@@ -60,7 +60,6 @@ augmentation:
       enabled: true
       roi_size: [128, 128, 32]
       ratios: [0.05, 0.2, 0.4, 0.35]  # background, uterus, ovary, endometrioma
-      num_classes: 4
       num_samples: 1
       allow_smaller: true
     random_rotation: 25  # degrees
