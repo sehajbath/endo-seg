@@ -21,6 +21,7 @@ from .structures import (
 )
 from ..augment.transforms import get_train_transforms
 from ..io.files import get_subject_data_dict, load_nifti
+from ..io.splits import summarize_split_counts
 
 logger = logging.getLogger(__name__)
 
@@ -49,13 +50,44 @@ def get_dataloaders(
     raw_structures = [struct for struct, enabled in config.get("structures", {}).items() if enabled]
     structures = canonicalize_structure_list(raw_structures)
 
+    split_summary = splits.get("split_summary")
+    patient_stats = splits.get("patient_stats")
+    if split_summary:
+        logger.info("Patient-level split composition:")
+        for split_name in ("train", "val", "test"):
+            stats = split_summary.get(split_name)
+            if stats:
+                logger.info(
+                    "  %s: %d patients (ovary+=%d, endometrioma+=%d)",
+                    split_name,
+                    stats.get("num_patients", 0),
+                    stats.get("has_ovary", 0),
+                    stats.get("has_endo", 0),
+                )
+    elif patient_stats:
+        logger.info("Patient-level split composition:")
+        for split_name in ("train", "val", "test"):
+            ids = splits.get(split_name, [])
+            stats = summarize_split_counts(ids, patient_stats)
+            logger.info(
+                "  %s: %d patients (ovary+=%d, endometrioma+=%d)",
+                split_name,
+                stats.get("num_patients", 0),
+                stats.get("has_ovary", 0),
+                stats.get("has_endo", 0),
+            )
+
     logger.info("Using sequences: %s", sequences)
     if raw_structures != structures:
         logger.info("Structures (configured): %s", raw_structures)
     logger.info("Segmenting structures (canonical): %s", structures)
 
     aug_config = config.get("augmentation", {}).get("train", {})
-    train_transform = get_train_transforms(aug_config) if aug_config else None
+    train_transform = (
+        get_train_transforms(aug_config, roi_size=preprocessor.target_size)
+        if aug_config
+        else None
+    )
 
     datasets = {
         split: EndoMRIDataset(

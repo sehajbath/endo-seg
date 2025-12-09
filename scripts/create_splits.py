@@ -4,6 +4,7 @@ Create train/validation/test splits for UT-EndoMRI dataset
 import logging
 import argparse
 import sys
+from argparse import BooleanOptionalAction
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -64,6 +65,12 @@ def main():
         type=int,
         default=42,
         help="Random seed for reproducibility"
+    )
+    parser.add_argument(
+        "--stratified",
+        action=BooleanOptionalAction,
+        default=True,
+        help="Enable patient-level stratified splits (default: enabled)",
     )
     parser.add_argument(
         "--use_paper_split",
@@ -129,7 +136,8 @@ def main():
             train_ratio=args.train_ratio,
             val_ratio=args.val_ratio,
             test_ratio=args.test_ratio,
-            seed=args.seed
+            seed=args.seed,
+            stratified=args.stratified,
         )
 
     logger.info("=" * 60)
@@ -143,6 +151,8 @@ def main():
     print(f"  Val: {len(splits['val'])} subjects ({splits['ratios']['val']:.1%})")
     print(f"  Test: {len(splits['test'])} subjects ({splits['ratios']['test']:.1%})")
     print(f"  Random seed: {splits['seed']}")
+    if 'stratified' in splits:
+        print(f"  Stratified split: {splits['stratified']}")
 
     if splits.get('paper_split'):
         print("  Using paper's train/test split")
@@ -153,6 +163,18 @@ def main():
     print(f"  {', '.join(splits['val'][:5])}{'...' if len(splits['val']) > 5 else ''}")
     print("\nTest subjects:")
     print(f"  {', '.join(splits['test'][:5])}{'...' if len(splits['test']) > 5 else ''}")
+
+    summary = splits.get('split_summary')
+    if summary:
+        print("\nSplit composition (patients / ovary+ / endometrioma+):")
+        for split_name in ("train", "val", "test"):
+            stats = summary.get(split_name, {})
+            print(
+                f"  {split_name.capitalize():<5}: "
+                f"{stats.get('num_patients', 0)} / "
+                f"{stats.get('has_ovary', 0)} / "
+                f"{stats.get('has_endo', 0)}"
+            )
 
 
 if __name__ == "__main__":

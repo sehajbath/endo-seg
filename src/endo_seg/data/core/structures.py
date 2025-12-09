@@ -33,6 +33,8 @@ class EndoMRIDataInfo:
         "cul_de_sac": {"cul_de_sac", "cul-de-sac", "culdesac", "cul de sac"},
     }
 
+    # Global label indices used across datasets, referenced by patient stats,
+    # samplers, and training scripts to keep label IDs consistent.
     STRUCTURE_CLASS_INDEX: Dict[str, int] = {
         "uterus": 1,
         "ovary": 2,

@@ -241,6 +241,24 @@ After completing Phase 1 setup:
 2. **Phase 3:** Add uncertainty quantification (MC Dropout, Ensembles)
 3. **Phase 4:** Training and evaluation
 
+## Training Swin UNETR (UT-EndoMRI)
+
+1. Generate (or refresh) a stratified patient split:
+   ```bash
+   python scripts/create_splits.py --data_root data/raw/UT-EndoMRI --dataset D2_TCPW \
+       --output data/splits/D2_TCPW_strat_seed42.json --stratified
+   ```
+   Pass `--no-stratified` if you want a purely random split or `--use_paper_split` to
+   reproduce the RAovSeg paper protocol.
+2. Launch end-to-end training with the new pipeline (foreground-biased sampling,
+   class-weighted Dice+CE, ovary/endometrioma-focused validation metric):
+   ```bash
+   python scripts/train_swin_unetr.py --config configs/config.yaml --run-name swin_strat
+   ```
+   The script automatically resolves the split file (or uses `--splits-file`), computes
+   patient label statistics, constructs MONAI dataloaders, and emits checkpoints in
+   `experiments/checkpoints/<run-name>`.
+
 ## License
 
 This project is licensed under the MIT License. The UT-EndoMRI dataset is available for free use exclusively in non-commercial scientific research.

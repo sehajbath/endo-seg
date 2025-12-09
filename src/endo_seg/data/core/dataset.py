@@ -28,7 +28,14 @@ logger = logging.getLogger(__name__)
 
 
 class EndoMRIDataset(Dataset):
-    """PyTorch dataset for UT-EndoMRI subjects."""
+    """PyTorch dataset for UT-EndoMRI subjects.
+
+    Each ``subject_id`` corresponds to a directory named like ``D2-012``
+    under ``<data_root>/<dataset_name>``. The dataset looks up MRI sequences
+    (e.g., ``T2FS``) and structure labels (``uterus``, ``ovary``, ``endometrioma``)
+    using :func:`endo_seg.data.io.files.get_subject_data_dict`, ensuring that
+    every returned sample contains at least one requested label volume.
+    """
 
     def __init__(
         self,

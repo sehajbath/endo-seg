@@ -37,7 +37,12 @@ from .io.files import (
     parse_filename,
     save_nifti,
 )
-from .io.splits import create_data_splits, load_data_splits
+from .io.splits import (
+    compute_patient_label_stats,
+    create_data_splits,
+    load_data_splits,
+    stratified_patient_split,
+)
 
 __all__ = [
     "EndoMRIDataset",
@@ -68,6 +73,8 @@ __all__ = [
     "load_nifti",
     "parse_filename",
     "save_nifti",
+    "compute_patient_label_stats",
     "create_data_splits",
     "load_data_splits",
+    "stratified_patient_split",
 ]

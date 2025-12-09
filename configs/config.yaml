@@ -10,6 +10,7 @@ paths:
   checkpoint_dir: "experiments/checkpoints"
   log_dir: "experiments/experiment_logs"
   results_dir: "experiments/results"
+  default_split_file: null  # Optional explicit split file path
 
 # Random seed for reproducibility
 seed: 42
@@ -19,6 +20,15 @@ dataset:
   name: "UT-EndoMRI"
   use_dataset_1: false  # Multi-center, multi-rater
   use_dataset_2: true   # Single-center, single-rater
+
+splits:
+  dataset_name: "D2_TCPW"
+  train_ratio: 0.7
+  val_ratio: 0.15
+  test_ratio: 0.15
+  seed: 42
+  stratified: true
+  use_paper_split: false
 
 # Structures to segment
 structures:
@@ -46,6 +56,13 @@ preprocessing:
 # Data augmentation
 augmentation:
   train:
+    patch_sampler:
+      enabled: true
+      roi_size: [128, 128, 32]
+      positive_fraction: 0.8
+      priority_labels: [2, 3]
+      foreground_labels: [1, 2, 3]
+      num_attempts: 8
     random_rotation: 25  # degrees
     random_translation: 25  # pixels
     random_flip_prob: 0.5
@@ -67,6 +84,8 @@ training:
   weight_decay: 0.00001
   scheduler: "cosine"
   warmup_epochs: 10
+  priority_classes: [2, 3]
+  use_class_weights: true
 
   # Loss function
   loss:

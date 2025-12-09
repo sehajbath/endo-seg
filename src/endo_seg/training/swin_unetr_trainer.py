@@ -276,6 +276,13 @@ def train_loop(
             history["val_epochs"].append(epoch)
             history["val_class_dice"].append(dice_scores.tolist())
 
+            class_names = config.get("class_names")
+            if class_names and len(class_names) == len(dice_scores):
+                per_class = ", ".join(
+                    f"{name}:{score:.3f}" for name, score in zip(class_names, dice_scores.tolist())
+                )
+                print(f"Per-class Dice @ epoch {epoch}: {per_class}", flush=True)
+
             selected = dice_scores[priority_classes].mean().item()
             history["priority_dice"].append(selected)
             print(
