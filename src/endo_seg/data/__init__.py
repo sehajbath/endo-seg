@@ -19,15 +19,15 @@ from .core.structures import (
     merge_structure_labels,
 )
 from .augment.transforms import (
-    Compose,
-    RandomElasticDeformation,
-    RandomFlip,
-    RandomGamma,
-    RandomGaussianNoise,
-    RandomRotation,
-    RandomTranslation,
-    RandomCrop,
-    get_train_transforms,
+    # Compose,
+    # RandomElasticDeformation,
+    # RandomFlip,
+    # RandomGamma,
+    # RandomGaussianNoise,
+    # RandomRotation,
+    # RandomTranslation,
+    # RandomCrop,
+     get_train_transforms,
 )
 from .io.files import (
     get_dataset_statistics,
