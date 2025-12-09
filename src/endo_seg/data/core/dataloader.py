@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import torch
@@ -104,12 +104,44 @@ def get_dataloaders(
     }
 
     batch_size = config.get("training", {}).get("batch_size", 2)
+    subject_sampler_cfg = config.get("training", {}).get("subject_sampler", {})
+    train_sampler = None
+    if subject_sampler_cfg.get("enabled"):
+        if not patient_stats:
+            logger.warning("Subject sampler enabled but patient_stats missing; falling back to uniform sampling.")
+        else:
+            weights: List[float] = []
+            endo_weight = subject_sampler_cfg.get("endo_weight", 4.0)
+            ovary_weight = subject_sampler_cfg.get("ovary_weight", 2.0)
+            default_weight = subject_sampler_cfg.get("default_weight", 1.0)
+            for entry in datasets["train"].data_index:
+                subject_id = entry.get("subject_id")
+                stats = patient_stats.get(subject_id, {}) if subject_id else {}
+                if stats.get("has_endo"):
+                    weights.append(endo_weight)
+                elif stats.get("has_ovary"):
+                    weights.append(ovary_weight)
+                else:
+                    weights.append(default_weight)
+            if weights:
+                train_sampler = WeightedRandomSampler(
+                    weights=weights,
+                    num_samples=len(weights),
+                    replacement=True,
+                )
+                logger.info(
+                    "Using weighted subject sampler (endo weight %.2f, ovary weight %.2f, default %.2f)",
+                    endo_weight,
+                    ovary_weight,
+                    default_weight,
+                )
 
     loaders = {
         "train": DataLoader(
             datasets["train"],
             batch_size=batch_size,
-            shuffle=True,
+            shuffle=train_sampler is None,
+            sampler=train_sampler,
             num_workers=num_workers,
             pin_memory=True,
             drop_last=True,

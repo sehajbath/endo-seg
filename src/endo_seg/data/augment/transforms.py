@@ -9,8 +9,8 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 from scipy import ndimage
+from monai.transforms import RandCropByLabelClassesd
 
 import logging
 
@@ -275,164 +275,59 @@ class RandomCrop:
         return sample
 
 
-class ForegroundPatchSampler:
-    """Foreground-biased sampler that oversamples ovaries and endometriomas."""
+class LabelAwareCrop:
+    """Wrapper around MONAI's RandCropByLabelClassesd for lesion-biased sampling."""
 
     def __init__(
         self,
         roi_size: Sequence[int],
-        positive_fraction: float = 0.8,
-        priority_labels: Optional[Iterable[int]] = None,
-        foreground_labels: Optional[Iterable[int]] = None,
-        num_attempts: int = 6,
+        ratios: Sequence[float],
+        num_classes: int,
+        num_samples: int = 1,
+        allow_smaller: bool = True,
     ) -> None:
-        self.roi_size = tuple(int(v) for v in roi_size)
-        self.positive_fraction = float(positive_fraction)
-        self.priority_labels = tuple(priority_labels or ())
-        self.foreground_labels = tuple(foreground_labels or ())
-        self.num_attempts = max(1, int(num_attempts))
+        if len(ratios) != num_classes:
+            logger.warning(
+                "Ratio length %d does not match num_classes %d; truncating to the shorter length.",
+                len(ratios),
+                num_classes,
+            )
+        adj_num_classes = min(len(ratios), num_classes)
+        self.cropper = RandCropByLabelClassesd(
+            keys=("image", "label"),
+            label_key="label",
+            spatial_size=tuple(int(v) for v in roi_size),
+            ratios=list(ratios)[:adj_num_classes],
+            num_classes=adj_num_classes,
+            num_samples=max(1, int(num_samples)),
+            allow_smaller=allow_smaller,
+        )
 
     def __call__(self, sample: Dict) -> Dict:
-        image = sample["image"]
-        label = sample["label"]
-        if image.ndim != label.ndim + 1:
-            raise ValueError("Expected label without channel dim when sampling patches")
-
-        cropped = self._sample_patch(image, label)
-        if cropped is not None:
-            sample["image"], sample["label"] = cropped
-        return sample
-
-    def _sample_patch(
-        self,
-        image: torch.Tensor,
-        label: torch.Tensor,
-    ) -> Optional[Tuple[torch.Tensor, torch.Tensor]]:
-        for _ in range(self.num_attempts):
-            want_positive = random.random() < self.positive_fraction
-            if want_positive:
-                cropped = self._sample_positive(image, label)
-                if cropped is not None:
-                    return cropped
-            else:
-                return self._random_crop(image, label)
-        return self._random_crop(image, label)
-
-    def _sample_positive(
-        self,
-        image: torch.Tensor,
-        label: torch.Tensor,
-    ) -> Optional[Tuple[torch.Tensor, torch.Tensor]]:
-        masks = []
-        if self.priority_labels:
-            masks.append(self._mask_for_values(label, self.priority_labels))
-        if self.foreground_labels:
-            masks.append(self._mask_for_values(label, self.foreground_labels))
-        masks.append(label > 0)
-
-        for mask in masks:
-            coords = mask.nonzero(as_tuple=False)
-            if coords.numel() == 0:
-                continue
-            center = coords[random.randrange(coords.size(0))]
-            return self._crop_around_center(image, label, center)
-        return None
-
-    def _mask_for_values(self, label: torch.Tensor, values: Iterable[int]) -> torch.Tensor:
-        mask = torch.zeros_like(label, dtype=torch.bool)
-        for value in values:
-            mask |= label == int(value)
-        return mask
-
-    def _random_crop(self, image: torch.Tensor, label: torch.Tensor):
-        starts = []
-        for dim, roi in zip(label.shape, self.roi_size):
-            if dim <= roi:
-                starts.append(0)
-            else:
-                starts.append(random.randint(0, dim - roi))
-        return self._crop(image, label, starts)
-
-    def _crop_around_center(
-        self,
-        image: torch.Tensor,
-        label: torch.Tensor,
-        center: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        starts: List[int] = []
-        for dim, roi, c in zip(label.shape, self.roi_size, center.tolist()):
-            if dim <= roi:
-                starts.append(0)
-                continue
-            c = int(c)
-            min_start = max(0, c - roi + 1)
-            max_start = min(c, dim - roi)
-            if max_start < min_start:
-                min_start = max_start
-            start = random.randint(min_start, max_start) if max_start > min_start else min_start
-            starts.append(start)
-        return self._crop(image, label, starts)
-
-    def _crop(
-        self,
-        image: torch.Tensor,
-        label: torch.Tensor,
-        starts: Sequence[int],
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        img_slices = [slice(None)]
-        lbl_slices = []
-        for start, roi, dim in zip(starts, self.roi_size, label.shape):
-            if dim <= roi:
-                img_slices.append(slice(0, dim))
-                lbl_slices.append(slice(0, dim))
-            else:
-                img_slices.append(slice(start, start + roi))
-                lbl_slices.append(slice(start, start + roi))
-
-        cropped_img = image[tuple(img_slices)]
-        cropped_lbl = label[tuple(lbl_slices)]
-
-        if cropped_img.shape[1:] != tuple(self.roi_size):
-            cropped_img, cropped_lbl = self._pad_to_roi(cropped_img, cropped_lbl)
-
-        return cropped_img, cropped_lbl
-
-    def _pad_to_roi(
-        self,
-        image: torch.Tensor,
-        label: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        pad_sizes: List[int] = []
-        for dim, roi in zip(reversed(image.shape[1:]), reversed(self.roi_size)):
-            pad_amt = max(0, roi - dim)
-            pad_sizes.extend([0, pad_amt])
-
-        if any(pad_sizes):
-            image = F.pad(image, pad_sizes, value=0)
-            label = F.pad(label.unsqueeze(0), pad_sizes, value=0).squeeze(0)
-
-        slices = [slice(None)]
-        lbl_slices = []
-        for roi in self.roi_size:
-            slices.append(slice(0, roi))
-            lbl_slices.append(slice(0, roi))
-
-        return image[tuple(slices)], label[tuple(lbl_slices)]
+        cropped = self.cropper(sample)
+        if isinstance(cropped, list):
+            if not cropped:
+                return sample
+            return cropped[0]
+        return cropped
 
 
 def get_train_transforms(config: Dict, roi_size: Optional[Sequence[int]] = None) -> Optional[Compose]:
     """Construct training augmentation pipeline from configuration."""
     transforms: List = []
 
-    sampler_cfg = config.get("patch_sampler", {})
-    if sampler_cfg.get("enabled") and roi_size is not None:
+    label_crop_cfg = config.get("label_crop", {})
+    if label_crop_cfg.get("enabled") and roi_size is not None:
+        crop_roi = label_crop_cfg.get("roi_size", roi_size)
+        ratios = label_crop_cfg.get("ratios", [0.05, 0.2, 0.4, 0.35])
+        num_classes = label_crop_cfg.get("num_classes", len(ratios))
         transforms.append(
-            ForegroundPatchSampler(
-                roi_size=sampler_cfg.get("roi_size", roi_size),
-                positive_fraction=sampler_cfg.get("positive_fraction", 0.8),
-                priority_labels=sampler_cfg.get("priority_labels"),
-                foreground_labels=sampler_cfg.get("foreground_labels"),
-                num_attempts=sampler_cfg.get("num_attempts", 6),
+            LabelAwareCrop(
+                roi_size=crop_roi,
+                ratios=ratios,
+                num_classes=num_classes,
+                num_samples=label_crop_cfg.get("num_samples", 1),
+                allow_smaller=label_crop_cfg.get("allow_smaller", True),
             )
         )
 
@@ -477,6 +372,6 @@ __all__ = [
     "RandomGamma",
     "RandomGaussianNoise",
     "RandomCrop",
-    "ForegroundPatchSampler",
+    "LabelAwareCrop",
     "get_train_transforms",
 ]
