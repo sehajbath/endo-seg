@@ -9,6 +9,7 @@ from typing import Dict, List, Sequence, Tuple
 
 import torch
 import torch.nn as nn
+from torch import amp
 from monai.data import decollate_batch
 from monai.losses import DiceLoss
 from monai.metrics import DiceMetric
@@ -54,6 +55,8 @@ class DiceCEWithWeights(nn.Module):
             to_onehot_y=True,
             softmax=True,
             squared_pred=True,
+            smooth_nr=1e-5,
+            smooth_dr=1e-5,
         )
         weight = torch.tensor(class_weights, dtype=torch.float32) if class_weights is not None else None
         self.ce = nn.CrossEntropyLoss(weight=weight)
@@ -92,7 +95,7 @@ def train_one_epoch(
 ) -> float:
     model.train()
     meter = AverageMeter("train_loss")
-    scaler = scaler or torch.cuda.amp.GradScaler(enabled=mixed_precision)
+    scaler = scaler or amp.GradScaler("cuda", enabled=mixed_precision)
 
     start = time.time()
     for step, batch in enumerate(loader, start=1):
@@ -103,9 +106,16 @@ def train_one_epoch(
             labels = labels.unsqueeze(1)
 
         optimizer.zero_grad(set_to_none=True)
-        with torch.cuda.amp.autocast(enabled=mixed_precision):
+        with amp.autocast("cuda", enabled=mixed_precision):
             logits = model(images)
             loss = loss_fn(logits, labels)
+
+        if torch.isnan(loss) or torch.isinf(loss):
+            print(
+                f"Skipping batch {step} at epoch {epoch} due to invalid loss ({loss.item()})",
+                flush=True,
+            )
+            continue
 
         scaler.scale(loss).backward()
 
@@ -218,7 +228,7 @@ def train_loop(
     optimizer, scheduler = create_optimizer_and_scheduler(model, config)
     loss_fn, dice_metric, post_pred, post_label = build_loss_and_metrics(config)
     loss_fn = loss_fn.to(device)
-    scaler = torch.cuda.amp.GradScaler(enabled=mixed_precision)
+    scaler = amp.GradScaler("cuda", enabled=mixed_precision)
 
     checkpoint_dir = config.get("checkpoint_dir", "checkpoints")
     best_score = float("-inf")

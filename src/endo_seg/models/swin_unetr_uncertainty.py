@@ -20,7 +20,6 @@ class SwinUNETRWithUncertainty(nn.Module):
 
     def __init__(
         self,
-        #img_size: Sequence[int],
         in_channels: int,
         out_channels: int,
         feature_size: int = 48,
@@ -32,11 +31,13 @@ class SwinUNETRWithUncertainty(nn.Module):
         sw_batch_size: int = 2,
         infer_overlap: float = 0.5,
         device: str | torch.device = "cuda",
+        spatial_dims: int = 3,
+        img_size: Optional[Sequence[int]] = None,
     ) -> None:
         super().__init__()
         self.device = torch.device(device)
-        self.backbone = SwinUNETR(
-            #img_size=img_size,
+        swin_kwargs = dict(
+            spatial_dims=spatial_dims,
             in_channels=in_channels,
             out_channels=out_channels,
             feature_size=feature_size,
@@ -45,6 +46,10 @@ class SwinUNETRWithUncertainty(nn.Module):
             dropout_path_rate=dropout_path_rate,
             use_checkpoint=use_checkpoint,
         )
+        if img_size is not None:
+            swin_kwargs["img_size"] = img_size
+
+        self.backbone = SwinUNETR(**swin_kwargs)
 
         self.roi_size = tuple(roi_size)
         self.sw_batch_size = sw_batch_size
