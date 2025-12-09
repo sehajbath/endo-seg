@@ -275,71 +275,36 @@ class RandomCrop:
         return sample
 
 
-class LabelAwareCrop:
-    """Wrapper around MONAI's RandCropByLabelClassesd for lesion-biased sampling."""
-
-    def __init__(
-        self,
-        roi_size: Sequence[int],
-        ratios: Sequence[float],
-        num_classes: Optional[int] = None,
-        num_samples: int = 1,
-        allow_smaller: bool = True,
-    ) -> None:
-        # ratio_list = list(ratios)
-        # if not ratio_list:
-        #     raise ValueError("label-aware crop requires at least one ratio value")
-
-        # if num_classes is None or num_classes <= 0:
-        #     effective_num_classes = len(ratio_list)
-        # else:
-        #     effective_num_classes = num_classes
-
-        # if len(ratio_list) != effective_num_classes:
-        #     logger.warning(
-        #         "label-aware crop ratios length (%d) mismatches num_classes (%d); adjusting ratios.",
-        #         len(ratio_list),
-        #         effective_num_classes,
-        #     )
-        #     if effective_num_classes < len(ratio_list):
-        #         ratio_list = ratio_list[:effective_num_classes]
-        #     else:
-        #         ratio_list.extend([ratio_list[-1]] * (effective_num_classes - len(ratio_list)))
-
-        self.cropper = RandCropByLabelClassesd(
-            keys=("image", "label"),
-            label_key="label",
-            spatial_size=tuple(int(v) for v in roi_size),
-            ratios=ratios,
-            num_classes=num_classes,
-            num_samples=max(1, int(num_samples)),
-            allow_smaller=allow_smaller,
-        )
-
-    def __call__(self, sample: Dict) -> Dict:
-        cropped = self.cropper(sample)
-        if isinstance(cropped, list):
-            if not cropped:
-                return sample
-            return cropped[0]
-        return cropped
-
-
 def get_train_transforms(config: Dict, roi_size: Optional[Sequence[int]] = None) -> Optional[Compose]:
     """Construct training augmentation pipeline from configuration."""
     transforms: List = []
 
     label_crop_cfg = config.get("label_crop", {})
     if label_crop_cfg.get("enabled") and roi_size is not None:
-        crop_roi = label_crop_cfg.get("roi_size")
-        ratios = label_crop_cfg.get("ratios")
+        crop_roi = tuple(int(v) for v in label_crop_cfg.get("roi_size", roi_size))
+        ratios = list(label_crop_cfg.get("ratios", [0.05, 0.2, 0.4, 0.35]))
         num_classes = label_crop_cfg.get("num_classes")
+        if num_classes is None or num_classes <= 0:
+            num_classes = len(ratios)
+        if len(ratios) != num_classes:
+            logger.warning(
+                "label-aware crop ratios length (%d) mismatches num_classes (%d); adjusting ratios.",
+                len(ratios),
+                num_classes,
+            )
+            if num_classes < len(ratios):
+                ratios = ratios[:num_classes]
+            else:
+                ratios.extend([ratios[-1]] * (num_classes - len(ratios)))
+
         transforms.append(
-            LabelAwareCrop(
-                roi_size=crop_roi,
+            RandCropByLabelClassesd(
+                keys=("image", "label"),
+                label_key="label",
+                spatial_size=crop_roi,
                 ratios=ratios,
                 num_classes=num_classes,
-                num_samples=label_crop_cfg.get("num_samples", 1),
+                num_samples=max(1, int(label_crop_cfg.get("num_samples", 1))),
                 allow_smaller=label_crop_cfg.get("allow_smaller", True),
             )
         )
@@ -385,6 +350,5 @@ __all__ = [
     "RandomGamma",
     "RandomGaussianNoise",
     "RandomCrop",
-    "LabelAwareCrop",
     "get_train_transforms",
 ]
