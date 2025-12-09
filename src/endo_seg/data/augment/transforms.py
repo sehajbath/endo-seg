@@ -353,8 +353,6 @@
 #     "get_train_transforms",
 # ]
 
-%%writefile /content/transforms.py
-
 from monai.transforms import (
     Compose,
     LoadImaged,
