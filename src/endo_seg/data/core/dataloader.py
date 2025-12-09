@@ -190,7 +190,7 @@ def compute_class_weights(
                 label_dict[struct] = label_data
 
         if label_dict:
-            merged_label = merge_structure_labels(label_dict, structure_to_idx)
+            merged_label = merge_structure_labels(label_dict, structure_to_idx, subject_id)
             for c in range(num_classes):
                 class_counts[c] += np.sum(merged_label == c)
 

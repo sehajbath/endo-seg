@@ -85,7 +85,7 @@ def compute_patient_label_stats(
             patient_stats[subject_id] = {"has_ovary": False, "has_endo": False}
             continue
 
-        merged = merge_structure_labels(label_dict)
+        merged = merge_structure_labels(label_dict, subject_id=subject_id)
         patient_stats[subject_id] = {
             "has_ovary": bool(np.any(merged == ovary_idx)),
             "has_endo": bool(np.any(merged == endo_idx)),

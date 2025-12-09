@@ -116,8 +116,8 @@ class EndoMRIDataset(Dataset):
         data, _ = load_nifti(str(file_path))
         return data
 
-    def _merge_labels(self, label_dict: Dict[str, np.ndarray]) -> np.ndarray:
-        return merge_structure_labels(label_dict)
+    def _merge_labels(self, label_dict: Dict[str, np.ndarray], subject_id: Optional[str]) -> np.ndarray:
+        return merge_structure_labels(label_dict, subject_id=subject_id)
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         if self.cache_data and self.cache is not None and idx in self.cache:
@@ -150,7 +150,7 @@ class EndoMRIDataset(Dataset):
             label_path = data_info.get(f"label_{struct}")
             label_dict[struct] = self._load_label(label_path) if label_path is not None else None
 
-        label = self._merge_labels(label_dict)
+        label = self._merge_labels(label_dict, subject_id)
 
         if self.preprocessor is not None:
             processed_images = []
