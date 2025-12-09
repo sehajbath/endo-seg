@@ -286,32 +286,32 @@ class LabelAwareCrop:
         num_samples: int = 1,
         allow_smaller: bool = True,
     ) -> None:
-        ratio_list = list(ratios)
-        if not ratio_list:
-            raise ValueError("label-aware crop requires at least one ratio value")
+        # ratio_list = list(ratios)
+        # if not ratio_list:
+        #     raise ValueError("label-aware crop requires at least one ratio value")
 
-        if num_classes is None or num_classes <= 0:
-            effective_num_classes = len(ratio_list)
-        else:
-            effective_num_classes = num_classes
+        # if num_classes is None or num_classes <= 0:
+        #     effective_num_classes = len(ratio_list)
+        # else:
+        #     effective_num_classes = num_classes
 
-        if len(ratio_list) != effective_num_classes:
-            logger.warning(
-                "label-aware crop ratios length (%d) mismatches num_classes (%d); adjusting ratios.",
-                len(ratio_list),
-                effective_num_classes,
-            )
-            if effective_num_classes < len(ratio_list):
-                ratio_list = ratio_list[:effective_num_classes]
-            else:
-                ratio_list.extend([ratio_list[-1]] * (effective_num_classes - len(ratio_list)))
+        # if len(ratio_list) != effective_num_classes:
+        #     logger.warning(
+        #         "label-aware crop ratios length (%d) mismatches num_classes (%d); adjusting ratios.",
+        #         len(ratio_list),
+        #         effective_num_classes,
+        #     )
+        #     if effective_num_classes < len(ratio_list):
+        #         ratio_list = ratio_list[:effective_num_classes]
+        #     else:
+        #         ratio_list.extend([ratio_list[-1]] * (effective_num_classes - len(ratio_list)))
 
         self.cropper = RandCropByLabelClassesd(
             keys=("image", "label"),
             label_key="label",
             spatial_size=tuple(int(v) for v in roi_size),
-            ratios=ratio_list,
-            num_classes=effective_num_classes,
+            ratios=ratios,
+            num_classes=num_classes,
             num_samples=max(1, int(num_samples)),
             allow_smaller=allow_smaller,
         )
