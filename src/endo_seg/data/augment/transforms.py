@@ -73,10 +73,7 @@ def get_train_transforms(
         falls back to the ROI specified in ``config['label_crop']['roi_size']``.
     """
 
-    transforms: List = [
-        EnsureChannelFirstd(keys="image", channel_dim="no_channel"),
-        EnsureChannelFirstd(keys="label", channel_dim="no_channel"),
-    ]
+    transforms: List = []
 
     label_crop_cfg = config.get("label_crop", {})
     if label_crop_cfg.get("enabled"):
@@ -86,10 +83,20 @@ def get_train_transforms(
         if temp_num_classes is None or temp_num_classes <= 0:
             temp_num_classes = len(label_crop_cfg.get("ratios", [0.05, 0.2, 0.4, 0.35]))
 
-        transforms.append(AsDiscreted(keys="label", to_onehot=temp_num_classes))
-        transforms.append(_build_label_crop_transform(label_crop_cfg, roi_size or label_crop_cfg["roi_size"]))
-        transforms.append(AsDiscreted(keys="label", argmax=True))
-        transforms.append(EnsureChannelFirstd(keys="label", channel_dim="no_channel"))
+        transforms.extend(
+            [
+                AsDiscreted(keys="label", to_onehot=temp_num_classes),
+                _build_label_crop_transform(label_crop_cfg, roi_size or label_crop_cfg["roi_size"]),
+                AsDiscreted(keys="label", argmax=True),
+            ]
+        )
+
+    transforms.extend(
+        [
+            EnsureChannelFirstd(keys="image", channel_dim="no_channel"),
+            EnsureChannelFirstd(keys="label", channel_dim="no_channel"),
+        ]
+    )
 
     flip_prob = config.get("random_flip_prob", 0.0)
     if flip_prob > 0:
