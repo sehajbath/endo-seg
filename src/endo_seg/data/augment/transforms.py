@@ -400,7 +400,7 @@ def get_train_transforms(augmentation_cfg: dict, roi_size: tuple[int, int, int])
         transforms_list.append(
             RandCropByLabelClassesd(
                 keys=["image", "label"],
-                roi_size=label_crop_cfg["roi_size"],
+                spatial_size=label_crop_cfg["roi_size"],
                 ratios=label_crop_cfg["ratios"],
                 num_samples=label_crop_cfg["num_samples"],
                 allow_smaller=label_crop_cfg["allow_smaller"],
