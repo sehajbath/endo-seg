@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Sequence
 
 import numpy as np
 from monai.transforms import (
+    AsDiscreted,
     Compose,
     EnsureChannelFirstd,
     EnsureTyped,
@@ -26,7 +27,9 @@ def _build_label_crop_transform(
     cfg: Dict,
     fallback_roi: Sequence[int],
 ) -> RandCropByLabelClassesd:
-    spatial_size = tuple(int(v) for v in cfg.get("roi_size", fallback_roi))
+    base_roi = tuple(int(v) for v in cfg.get("roi_size", fallback_roi))
+    # Keep channel dimension intact during cropping when labels are one-hot.
+    spatial_size = (-1, *base_roi) if len(base_roi) == 3 else tuple(base_roi)
 
     ratios = list(cfg.get("ratios", [0.05, 0.2, 0.4, 0.35]))
     if not ratios:
@@ -81,7 +84,18 @@ def get_train_transforms(
         if roi_size is None and "roi_size" not in label_crop_cfg:
             raise ValueError("label_crop requires either roi_size argument or roi_size in config")
 
-        transforms.append(_build_label_crop_transform(label_crop_cfg, roi_size or label_crop_cfg["roi_size"]))
+        num_classes = label_crop_cfg.get("num_classes")
+        if num_classes is None or num_classes <= 0:
+            num_classes = len(label_crop_cfg.get("ratios", [0.05, 0.2, 0.4, 0.35]))
+
+        # One-hot before cropping to force known class count; argmax afterward restores label format.
+        transforms.extend(
+            [
+                AsDiscreted(keys="label", to_onehot=num_classes),
+                _build_label_crop_transform(label_crop_cfg, roi_size or label_crop_cfg["roi_size"]),
+                AsDiscreted(keys="label", argmax=True),
+            ]
+        )
 
     flip_prob = config.get("random_flip_prob", 0.0)
     if flip_prob > 0:
