@@ -27,10 +27,14 @@ def _build_label_crop_transform(
     cfg: Dict,
     fallback_roi: Sequence[int],
 ) -> RandCropByLabelClassesd:
+<<<<<<< HEAD
     base_roi = tuple(int(v) for v in cfg.get("roi_size", fallback_roi))
     # Keep channel dimension intact during cropping when labels are one-hot.
     spatial_size = (-1, *base_roi) if len(base_roi) == 3 else tuple(base_roi)
 
+=======
+    roi_size = tuple(int(v) for v in cfg.get("roi_size", fallback_roi))
+>>>>>>> parent of b7ecc9d (Update transforms.py)
     ratios = list(cfg.get("ratios", [0.05, 0.2, 0.4, 0.35]))
     if not ratios:
         raise ValueError("label_crop ratios must contain at least one entry")
@@ -53,12 +57,11 @@ def _build_label_crop_transform(
     return RandCropByLabelClassesd(
         keys=("image", "label"),
         label_key="label",
-        spatial_size=spatial_size,
+        spatial_size=roi_size,
         ratios=ratios,
         num_classes=num_classes,
         num_samples=max(1, int(cfg.get("num_samples", 1))),
         allow_smaller=cfg.get("allow_smaller", True),
-        warn=False,
     )
 
 
@@ -77,12 +80,18 @@ def get_train_transforms(
         falls back to the ROI specified in ``config['label_crop']['roi_size']``.
     """
 
-    transforms: List = [EnsureChannelFirstd(keys="image", channel_dim=0)]
+    transforms: List = [
+        EnsureChannelFirstd(keys="image", channel_dim="no_channel"),
+        EnsureChannelFirstd(keys="label", channel_dim="no_channel"),
+    ]
 
     label_crop_cfg = config.get("label_crop", {})
     if label_crop_cfg.get("enabled"):
         if roi_size is None and "roi_size" not in label_crop_cfg:
             raise ValueError("label_crop requires either roi_size argument or roi_size in config")
+        temp_num_classes = label_crop_cfg.get("num_classes")
+        if temp_num_classes is None or temp_num_classes <= 0:
+            temp_num_classes = len(label_crop_cfg.get("ratios", [0.05, 0.2, 0.4, 0.35]))
 
         num_classes = label_crop_cfg.get("num_classes")
         if num_classes is None or num_classes <= 0:
@@ -91,9 +100,16 @@ def get_train_transforms(
         # One-hot before cropping to force known class count; argmax afterward restores label format.
         transforms.extend(
             [
+<<<<<<< HEAD
                 AsDiscreted(keys="label", to_onehot=num_classes),
                 _build_label_crop_transform(label_crop_cfg, roi_size or label_crop_cfg["roi_size"]),
                 AsDiscreted(keys="label", argmax=True),
+=======
+                AsDiscreted(keys="label", to_onehot=temp_num_classes),
+                _build_label_crop_transform(label_crop_cfg, roi_size or label_crop_cfg["roi_size"]),
+                AsDiscreted(keys="label", argmax=True),
+                EnsureChannelFirstd(keys="label", channel_dim="no_channel"),
+>>>>>>> parent of b7ecc9d (Update transforms.py)
             ]
         )
 
