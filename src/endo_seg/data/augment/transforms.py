@@ -27,14 +27,7 @@ def _build_label_crop_transform(
     cfg: Dict,
     fallback_roi: Sequence[int],
 ) -> RandCropByLabelClassesd:
-<<<<<<< HEAD
-    base_roi = tuple(int(v) for v in cfg.get("roi_size", fallback_roi))
-    # Keep channel dimension intact during cropping when labels are one-hot.
-    spatial_size = (-1, *base_roi) if len(base_roi) == 3 else tuple(base_roi)
-
-=======
     roi_size = tuple(int(v) for v in cfg.get("roi_size", fallback_roi))
->>>>>>> parent of b7ecc9d (Update transforms.py)
     ratios = list(cfg.get("ratios", [0.05, 0.2, 0.4, 0.35]))
     if not ratios:
         raise ValueError("label_crop ratios must contain at least one entry")
@@ -82,7 +75,7 @@ def get_train_transforms(
 
     transforms: List = [
         EnsureChannelFirstd(keys="image", channel_dim="no_channel"),
-        EnsureChannelFirstd(keys="label", channel_dim="no_channel"),
+        # Label channel dimension will be added after one-hot encoding and argmax (line 94)
     ]
 
     label_crop_cfg = config.get("label_crop", {})
@@ -93,23 +86,12 @@ def get_train_transforms(
         if temp_num_classes is None or temp_num_classes <= 0:
             temp_num_classes = len(label_crop_cfg.get("ratios", [0.05, 0.2, 0.4, 0.35]))
 
-        num_classes = label_crop_cfg.get("num_classes")
-        if num_classes is None or num_classes <= 0:
-            num_classes = len(label_crop_cfg.get("ratios", [0.05, 0.2, 0.4, 0.35]))
-
-        # One-hot before cropping to force known class count; argmax afterward restores label format.
         transforms.extend(
             [
-<<<<<<< HEAD
-                AsDiscreted(keys="label", to_onehot=num_classes),
-                _build_label_crop_transform(label_crop_cfg, roi_size or label_crop_cfg["roi_size"]),
-                AsDiscreted(keys="label", argmax=True),
-=======
                 AsDiscreted(keys="label", to_onehot=temp_num_classes),
                 _build_label_crop_transform(label_crop_cfg, roi_size or label_crop_cfg["roi_size"]),
                 AsDiscreted(keys="label", argmax=True),
                 EnsureChannelFirstd(keys="label", channel_dim="no_channel"),
->>>>>>> parent of b7ecc9d (Update transforms.py)
             ]
         )
 
@@ -180,6 +162,10 @@ def get_train_transforms(
 
     if not transforms:
         return None
+
+    # Ensure label has channel dimension if it wasn't added by label_crop pipeline
+    if not label_crop_cfg.get("enabled"):
+        transforms.append(EnsureChannelFirstd(keys="label", channel_dim="no_channel"))
 
     transforms.append(EnsureTyped(keys=("image", "label")))
     return Compose(transforms)
