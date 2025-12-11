@@ -26,9 +26,7 @@ def _build_label_crop_transform(
     cfg: Dict,
     fallback_roi: Sequence[int],
 ) -> RandCropByLabelClassesd:
-    base_roi = tuple(int(v) for v in cfg.get("roi_size", fallback_roi))
-    # Keep channel dim intact for image/label by prefixing -1 when only spatial dims are provided.
-    spatial_size = (-1, *base_roi) if len(base_roi) == 3 else tuple(base_roi)
+    spatial_size = tuple(int(v) for v in cfg.get("roi_size", fallback_roi))
 
     ratios = list(cfg.get("ratios", [0.05, 0.2, 0.4, 0.35]))
     if not ratios:
@@ -83,14 +81,7 @@ def get_train_transforms(
         if roi_size is None and "roi_size" not in label_crop_cfg:
             raise ValueError("label_crop requires either roi_size argument or roi_size in config")
 
-        transforms.extend(
-            [
-                EnsureChannelFirstd(keys="label", channel_dim="no_channel"),
-                _build_label_crop_transform(label_crop_cfg, roi_size or label_crop_cfg["roi_size"]),
-            ]
-        )
-    else:
-        transforms.append(EnsureChannelFirstd(keys="label", channel_dim="no_channel"))
+        transforms.append(_build_label_crop_transform(label_crop_cfg, roi_size or label_crop_cfg["roi_size"]))
 
     flip_prob = config.get("random_flip_prob", 0.0)
     if flip_prob > 0:
