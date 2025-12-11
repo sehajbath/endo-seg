@@ -75,7 +75,7 @@ def get_train_transforms(
 
     transforms: List = [
         EnsureChannelFirstd(keys="image", channel_dim="no_channel"),
-        EnsureChannelFirstd(keys="label", channel_dim="no_channel"),
+        # Label channel dimension will be added after one-hot encoding and argmax (line 94)
     ]
 
     label_crop_cfg = config.get("label_crop", {})
@@ -162,6 +162,10 @@ def get_train_transforms(
 
     if not transforms:
         return None
+
+    # Ensure label has channel dimension if it wasn't added by label_crop pipeline
+    if not label_crop_cfg.get("enabled"):
+        transforms.append(EnsureChannelFirstd(keys="label", channel_dim="no_channel"))
 
     transforms.append(EnsureTyped(keys=("image", "label")))
     return Compose(transforms)
