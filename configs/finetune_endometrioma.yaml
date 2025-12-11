@@ -1,0 +1,176 @@
+# Finetuning Configuration: Stage 2 - Endometrioma Segmentation
+#
+# Purpose: Transfer learning from pretrained uterus+ovary model to 4-class endometrioma segmentation
+#   - Load pretrained weights from Stage 1
+#   - Expand output layer from 3 → 4 classes
+#   - Freeze early encoder layers
+#   - Extreme foreground bias on endometriomas (70-80% of crops)
+#   - Use Focal loss for rare class emphasis
+#
+# Dataset Options:
+#   - Option A (conservative): D2_TCPW only - 8 endo cases in training
+#   - Option B (recommended): D2_TCPW + D1_MHS - more endo diversity
+#
+# Expected Performance: Endometrioma Dice >0.55 (4x improvement from 0.139!)
+
+project_name: "endo-uncertainty-seg"
+experiment_name: "finetune_endometrioma"
+
+# Paths
+paths:
+  data_root: "data/raw/UT-EndoMRI"
+  processed_data: "data/processed"
+  splits_dir: "data/splits"
+  checkpoint_dir: "experiments/checkpoints_finetune"
+  log_dir: "experiments/logs_finetune"
+  results_dir: "experiments/results_finetune"
+  default_split_file: null
+  pretrained_checkpoint: "experiments/checkpoints_pretrain/best.pth"  # ✅ Load pretrained weights
+
+# Random seed
+seed: 42
+
+# Dataset
+dataset:
+  name: "UT-EndoMRI"
+  use_dataset_1: false  # Set true to include D1_MHS for more endo cases
+  use_dataset_2: true   # D2_TCPW
+
+splits:
+  dataset_name: "D2_TCPW"  # Or "D1_MHS" or combine both
+  train_ratio: 0.7
+  val_ratio: 0.15
+  test_ratio: 0.15
+  seed: 42
+  stratified: true
+  use_paper_split: false
+
+# ✅ STAGE 2: All structures including endometrioma (4-class problem)
+structures:
+  uterus: true
+  ovaries: true
+  endometriomas: true  # ✅ Now included
+  cysts: false
+  cul_de_sac: false
+
+# MRI sequences (can enable multi-modal in future)
+sequences:
+  T1: false
+  T1FS: false
+  T2: false
+  T2FS: true
+
+# Preprocessing (same as pretraining for consistency)
+preprocessing:
+  target_spacing: [1.5, 1.5, 2.5]
+  target_size: [320, 320, 128]  # Large enough for cropping
+  intensity_clip_percentiles: [1, 99]
+  normalize_method: "min_max"
+  resampling_order: 3
+
+# ✅ EXTREME FOREGROUND BIAS for endometriomas
+augmentation:
+  train:
+    label_crop:
+      enabled: true
+      roi_size: [224, 224, 96]
+      ratios: [0.05, 0.1, 0.15, 0.7]  # ✅ 70% endo-centered crops!
+      # Alternative: [0.03, 0.07, 0.1, 0.8] for 80% endo bias
+      num_classes: 4  # ✅ 4 classes for finetuning
+      num_samples: 8  # ✅ Even more crops per subject (8-16)
+      allow_smaller: true
+    random_rotation: 20
+    random_translation: 15
+    random_flip_prob: 0.5
+    random_elastic_deform: true
+    random_gamma: [0.9, 1.1]
+    random_gaussian_noise: 0.01
+  val:
+    enabled: false
+  test:
+    enabled: false
+
+# ✅ FINETUNING configuration
+training:
+  batch_size: 2  # Or 1 if memory constrained
+  num_workers: 4
+  epochs: 200  # Longer training for finetuning
+  learning_rate: 0.00005  # ✅ Lower LR for finetuning (5e-5)
+  optimizer: "AdamW"
+  weight_decay: 0.000001  # ✅ Less regularization (1e-6)
+  scheduler: "cosine"
+  warmup_epochs: 10
+  priority_classes: [2, 3]  # ✅ Ovary + endometrioma
+  use_class_weights: true
+
+  # ✅ Aggressive subject sampling for endo cases
+  subject_sampler:
+    enabled: true
+    endo_weight: 6.0  # ✅ Even higher weight (6x)
+    ovary_weight: 2.0
+    default_weight: 1.0
+
+  # ✅ FOCAL LOSS for extreme class imbalance
+  loss_type: "focal"  # ✅ Use FocalDiceCELoss
+  focal_gamma: 2.0  # Focusing parameter (higher = more focus on hard examples)
+  dice_weight: 0.7
+  focal_weight: 0.3
+  class_weights: [0.01, 0.5, 2.0, 15.0]  # ✅ [bg, uterus, ovary, endo] - 15x weight for endo!
+
+  # Transfer learning settings (applied in training script)
+  freeze_encoder: true  # ✅ Freeze first 2 Swin stages
+  freeze_stages: [0, 1]  # Which Swin stages to freeze
+
+  # Early stopping
+  early_stopping:
+    enabled: true
+    patience: 25  # ✅ Longer patience (25-30 epochs)
+    monitor: "val_dice"  # Or "priority_dice" for ovary+endo
+    mode: "max"
+
+# Validation
+validation:
+  frequency: 1
+  metrics:
+    - "dice"
+    - "hausdorff_95"
+
+# Logging
+logging:
+  use_wandb: true
+  use_tensorboard: true
+  log_frequency: 10
+  save_predictions: true
+  save_frequency: 10
+
+# Device
+device: "cuda"
+mixed_precision: true
+
+# Model (transfer learning applied in training script)
+model:
+  num_classes: 4  # ✅ background, uterus, ovary, endometrioma
+  in_channels: 1  # T2FS only (can increase for multi-modal)
+  feature_size: 48
+  drop_rate: 0.1
+  attn_drop_rate: 0.1
+  dropout_path_rate: 0.1
+  use_checkpointing: true
+
+# Inference
+inference:
+  sw_batch_size: 2
+  infer_overlap: 0.5
+
+# ✅ SUCCESS CRITERIA for Stage 2:
+# - Endometrioma Dice > 0.55 (ideally 0.60-0.70)
+# - Ovary Dice > 0.70 (maintain pretrained performance)
+# - Uterus Dice > 0.85 (maintain pretrained performance)
+# - Priority metric (ovary+endo) > 0.60
+#
+# If performance is still poor:
+#   1. Try combining D1_MHS dataset for more endo cases
+#   2. Increase endo-centered crop ratio to 80% [0.03, 0.07, 0.1, 0.8]
+#   3. Increase num_samples to 12-16
+#   4. Increase endo class weight to 20.0
+#   5. Try focal_gamma=3.0 for even stronger hard example focus

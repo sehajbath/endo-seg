@@ -47,30 +47,147 @@ def create_optimizer_and_scheduler(model: torch.nn.Module, config: Dict) -> Tupl
 
 
 class DiceCEWithWeights(nn.Module):
-    """Combine Dice loss with weighted cross entropy to stabilize rare classes."""
+    """Combine Dice loss with weighted cross entropy to stabilize rare classes.
 
-    def __init__(self, class_weights: Sequence[float] | None = None) -> None:
+    Args:
+        class_weights: Weights for CrossEntropy loss per class
+        use_generalized_dice: If True, use GeneralizedDiceLoss (better for class imbalance)
+        dice_weight: Weight for Dice loss component (default 0.7)
+        ce_weight: Weight for CE loss component (default 0.3)
+    """
+
+    def __init__(
+        self,
+        class_weights: Sequence[float] | None = None,
+        use_generalized_dice: bool = False,
+        dice_weight: float = 0.7,
+        ce_weight: float = 0.3,
+    ) -> None:
         super().__init__()
-        self.dice = DiceLoss(
-            to_onehot_y=True,
-            softmax=True,
-            squared_pred=True,
-            smooth_nr=1e-5,
-            smooth_dr=1e-5,
-        )
+
+        # CRITICAL FIX: Remove squared_pred=True to preserve gradient signal for rare classes
+        # For rare classes (endometriomas ~1% of voxels), squaring predictions (e.g., 0.2^2 = 0.04)
+        # effectively removes gradient signal, preventing learning
+        if use_generalized_dice:
+            from monai.losses import GeneralizedDiceLoss
+            self.dice = GeneralizedDiceLoss(
+                to_onehot_y=True,
+                softmax=True,
+            )
+        else:
+            self.dice = DiceLoss(
+                to_onehot_y=True,
+                softmax=True,
+                squared_pred=False,  # ✅ FIXED: Linear predictions
+                smooth_nr=1e-5,
+                smooth_dr=1e-5,
+            )
+
         weight = torch.tensor(class_weights, dtype=torch.float32) if class_weights is not None else None
         self.ce = nn.CrossEntropyLoss(weight=weight)
+
+        # Weighted combination (Dice dominates, CE helps with class balance)
+        self.dice_weight = dice_weight
+        self.ce_weight = ce_weight
 
     def forward(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         dice_loss = self.dice(logits, labels)
         target = labels.squeeze(1) if labels.ndim == logits.ndim else labels
         ce_loss = self.ce(logits, target)
-        return dice_loss + ce_loss
+
+        # Weighted combination instead of simple sum
+        return self.dice_weight * dice_loss + self.ce_weight * ce_loss
+
+
+class FocalDiceCELoss(nn.Module):
+    """Focal Dice + Focal CE loss for extreme class imbalance (e.g., endometrioma finetuning).
+
+    Focal loss down-weights easy examples and focuses gradient on hard examples.
+    Particularly effective for rare classes occupying <1% of voxels.
+
+    Args:
+        class_weights: Weights for FocalLoss per class
+        gamma: Focusing parameter (default 2.0). Higher gamma = more focus on hard examples
+        dice_weight: Weight for Dice Focal loss component (default 0.7)
+        focal_weight: Weight for Focal CE loss component (default 0.3)
+    """
+
+    def __init__(
+        self,
+        class_weights: Sequence[float] | None = None,
+        gamma: float = 2.0,
+        dice_weight: float = 0.7,
+        focal_weight: float = 0.3,
+    ) -> None:
+        super().__init__()
+
+        from monai.losses import DiceFocalLoss, FocalLoss
+
+        self.dice_focal = DiceFocalLoss(
+            to_onehot_y=True,
+            softmax=True,
+            gamma=gamma,  # Focus on hard examples
+        )
+
+        weight = torch.tensor(class_weights, dtype=torch.float32) if class_weights is not None else None
+        self.focal = FocalLoss(
+            to_onehot_y=True,
+            gamma=gamma,
+            weight=weight,
+        )
+
+        self.dice_weight = dice_weight
+        self.focal_weight = focal_weight
+
+    def forward(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        dice_loss = self.dice_focal(logits, labels)
+        target = labels.squeeze(1) if labels.ndim == logits.ndim else labels
+        focal_loss = self.focal(logits, target)
+
+        return self.dice_weight * dice_loss + self.focal_weight * focal_loss
 
 
 def build_loss_and_metrics(config: Dict) -> Tuple[nn.Module, DiceMetric, AsDiscrete, AsDiscrete]:
+    """Build loss function and metrics based on configuration.
+
+    Args:
+        config: Training configuration dictionary
+
+    Supported loss types (via config["loss_type"]):
+        - "dice_ce" (default): DiceCEWithWeights
+        - "focal": FocalDiceCELoss (for extreme class imbalance)
+
+    Returns:
+        Tuple of (loss_fn, dice_metric, post_pred, post_label)
+    """
     class_weights = config.get("class_weights")
-    loss_fn = DiceCEWithWeights(class_weights)
+    loss_type = config.get("loss_type", "dice_ce")
+
+    if loss_type == "focal":
+        # Focal loss for finetuning on rare classes
+        gamma = config.get("focal_gamma", 2.0)
+        dice_weight = config.get("dice_weight", 0.7)
+        focal_weight = config.get("focal_weight", 0.3)
+
+        loss_fn = FocalDiceCELoss(
+            class_weights=class_weights,
+            gamma=gamma,
+            dice_weight=dice_weight,
+            focal_weight=focal_weight,
+        )
+    else:
+        # Standard Dice + CE loss (for pretraining or general use)
+        use_generalized_dice = config.get("use_generalized_dice", False)
+        dice_weight = config.get("dice_weight", 0.7)
+        ce_weight = config.get("ce_weight", 0.3)
+
+        loss_fn = DiceCEWithWeights(
+            class_weights=class_weights,
+            use_generalized_dice=use_generalized_dice,
+            dice_weight=dice_weight,
+            ce_weight=ce_weight,
+        )
+
     dice_metric = DiceMetric(
         include_background=True,
         reduction=MetricReduction.MEAN_BATCH,

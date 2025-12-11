@@ -1,0 +1,158 @@
+# Pretraining Configuration: Stage 1 - Uterus + Ovary Segmentation
+#
+# Purpose: Train 3-class model (background, uterus, ovary) to learn:
+#   - Pelvic anatomy and MRI contrast patterns
+#   - Spatial context for where endometriomas occur
+#   - Progressive learning: large (uterus) → medium (ovary) → small (endo)
+#
+# Dataset: D2_TCPW - 49 training subjects (100% have uterus, 80% have ovary)
+# Expected Performance: Uterus Dice >0.90, Ovary Dice >0.75
+
+project_name: "endo-uncertainty-seg"
+experiment_name: "pretrain_uterus_ovary"
+
+# Paths
+paths:
+  data_root: "data/raw/UT-EndoMRI"
+  processed_data: "data/processed"
+  splits_dir: "data/splits"
+  checkpoint_dir: "experiments/checkpoints_pretrain"
+  log_dir: "experiments/logs_pretrain"
+  results_dir: "experiments/results_pretrain"
+  default_split_file: null
+
+# Random seed
+seed: 42
+
+# Dataset
+dataset:
+  name: "UT-EndoMRI"
+  use_dataset_1: false
+  use_dataset_2: true  # D2_TCPW
+
+splits:
+  dataset_name: "D2_TCPW"
+  train_ratio: 0.7
+  val_ratio: 0.15
+  test_ratio: 0.15
+  seed: 42
+  stratified: true
+  use_paper_split: false
+
+# ✅ STAGE 1: Only uterus + ovary (3-class problem)
+structures:
+  uterus: true
+  ovaries: true
+  endometriomas: false  # Excluded in pretraining
+  cysts: false
+  cul_de_sac: false
+
+# MRI sequences
+sequences:
+  T1: false
+  T1FS: false
+  T2: false
+  T2FS: true  # Single modality for now
+
+# ✅ FIX 1: Increase preprocessing size to enable actual cropping
+preprocessing:
+  target_spacing: [1.5, 1.5, 2.5]  # Fine resolution (from Colab)
+  target_size: [320, 320, 128]  # ✅ INCREASED from [224, 224, 96]
+  intensity_clip_percentiles: [1, 99]
+  normalize_method: "min_max"
+  resampling_order: 3
+
+# ✅ FIX 2: Augmentation with actual cropping
+augmentation:
+  train:
+    label_crop:
+      enabled: true
+      roi_size: [224, 224, 96]  # ✅ Now smaller than target_size → actual cropping
+      ratios: [0.1, 0.4, 0.5]  # ✅ 10% bg, 40% uterus, 50% ovary
+      num_classes: 3  # ✅ 3 classes for pretraining
+      num_samples: 4  # ✅ More crops per subject for diversity
+      allow_smaller: true
+    random_rotation: 20  # degrees
+    random_translation: 15  # pixels
+    random_flip_prob: 0.5
+    random_elastic_deform: true
+    random_gamma: [0.9, 1.1]
+    random_gaussian_noise: 0.01
+  val:
+    enabled: false
+  test:
+    enabled: false
+
+# ✅ FIX 3: Training configuration optimized for pretraining
+training:
+  batch_size: 2  # ✅ Increased from 1 if memory allows
+  num_workers: 4
+  epochs: 100  # Expected 50-100 epochs for convergence
+  learning_rate: 0.0002  # ✅ Slightly higher (2e-4) for pretraining from scratch
+  optimizer: "AdamW"
+  weight_decay: 0.00001
+  scheduler: "cosine"
+  warmup_epochs: 10
+  priority_classes: [1, 2]  # ✅ Track both uterus + ovary
+  use_class_weights: true
+
+  # Subject sampling (less critical for pretraining since most have ovary)
+  subject_sampler:
+    enabled: true
+    ovary_weight: 2.0
+    default_weight: 1.0
+
+  # ✅ FIX 4: Loss function configuration
+  loss_type: "dice_ce"  # Standard Dice+CE (can try "generalized_dice")
+  use_generalized_dice: false  # Set true for better class imbalance handling
+  dice_weight: 0.7  # ✅ Dice dominant
+  ce_weight: 0.3  # ✅ CE helps with class balance
+  class_weights: [0.01, 1.0, 3.0]  # ✅ [bg, uterus, ovary] - ovary weighted higher
+
+  # Early stopping
+  early_stopping:
+    enabled: true
+    patience: 20  # Generous patience for pretraining
+    monitor: "val_dice"
+    mode: "max"
+
+# Validation
+validation:
+  frequency: 1
+  metrics:
+    - "dice"
+    - "hausdorff_95"
+
+# Logging
+logging:
+  use_wandb: true
+  use_tensorboard: true
+  log_frequency: 10
+  save_predictions: true
+  save_frequency: 10
+
+# Device
+device: "cuda"
+mixed_precision: true
+
+# Model (implicit - defined in notebook/script)
+model:
+  num_classes: 3  # ✅ background, uterus, ovary
+  in_channels: 1  # T2FS only
+  feature_size: 48
+  drop_rate: 0.1
+  attn_drop_rate: 0.1
+  dropout_path_rate: 0.1
+  use_checkpointing: true  # Gradient checkpointing for memory
+
+# Inference
+inference:
+  sw_batch_size: 2
+  infer_overlap: 0.5
+
+# ✅ SUCCESS CRITERIA for Stage 1:
+# - Uterus Dice > 0.90
+# - Ovary Dice > 0.75
+# - Training loss < 0.15
+# - Validation Dice stable and increasing
+# - Model converges within 50-100 epochs
