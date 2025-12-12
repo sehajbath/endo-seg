@@ -11,7 +11,6 @@ from monai.transforms import (
     Compose,
     EnsureChannelFirstd,
     EnsureTyped,
-    Lambda,
     Rand3DElasticd,
     RandAdjustContrastd,
     RandCropByLabelClassesd,
@@ -19,6 +18,7 @@ from monai.transforms import (
     RandGaussianNoised,
     RandRotated,
     RandZoomd,
+    SqueezeDimd,
 )
 
 logger = logging.getLogger(__name__)
@@ -136,21 +136,15 @@ def get_train_transforms(
             temp_num_classes = len(label_crop_cfg.get("ratios", [0.05, 0.2, 0.4, 0.35]))
 
         # Label has channel dimension [1, H, W, D] from line 79
-        # Debug: print shape before and after each transform to find where extra dim is added
-        def debug_print(data, stage):
-            print(f"[DEBUG] {stage}: label shape = {data['label'].shape}")
-            return data
-
+        # AsDiscreted(to_onehot) handles [1,H,W,D] → [4,H,W,D] correctly
+        # AsDiscreted(argmax) uses keepdim=True → [4,H,W,D] → [1,H,W,D]
+        # Need to squeeze before adding channel back
         transforms.extend([
-            Lambda(func=lambda d: debug_print(d, "Before to_onehot")),
-            AsDiscreted(keys="label", to_onehot=temp_num_classes),
-            Lambda(func=lambda d: debug_print(d, "After to_onehot")),
+            AsDiscreted(keys="label", to_onehot=temp_num_classes),  # [1,H,W,D] → [4,H,W,D]
             _build_label_crop_transform(label_crop_cfg, roi_size or label_crop_cfg["roi_size"]),
-            Lambda(func=lambda d: debug_print(d, "After crop")),
-            AsDiscreted(keys="label", argmax=True),
-            Lambda(func=lambda d: debug_print(d, "After argmax")),
-            EnsureChannelFirstd(keys="label", channel_dim="no_channel"),
-            Lambda(func=lambda d: debug_print(d, "After ensure channel")),
+            AsDiscreted(keys="label", argmax=True),  # [4,224,224,96] → [1,224,224,96] (keepdim!)
+            SqueezeDimd(keys="label", dim=0),  # [1,224,224,96] → [224,224,96]
+            EnsureChannelFirstd(keys="label", channel_dim="no_channel"),  # [224,224,96] → [1,224,224,96]
         ])
     # If label_crop disabled, label already has channel from line 79, no action needed
 
