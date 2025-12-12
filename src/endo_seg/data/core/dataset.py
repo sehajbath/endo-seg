@@ -157,6 +157,14 @@ class EndoMRIDataset(Dataset):
                             seq_data.shape,
                         )
                         seq_data = np.zeros_like(image_ref)
+                if seq_data.shape != image_ref.shape:
+                    logger.warning(
+                        "Image shape still mismatched for %s (subject %s); forcing zero-fill to %s.",
+                        seq,
+                        subject_id,
+                        image_ref.shape,
+                    )
+                    seq_data = np.zeros_like(image_ref)
                 images.append(seq_data)
                 modality_mask.append(1.0)
             else:
