@@ -141,8 +141,7 @@ class FocalDiceCELoss(nn.Module):
 
     def forward(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         dice_loss = self.dice_focal(logits, labels)
-        target = labels.squeeze(1) if labels.ndim == logits.ndim else labels
-        focal_loss = self.focal(logits, target)
+        focal_loss = self.focal(logits, labels)  # Use labels directly, don't squeeze!
 
         return self.dice_weight * dice_loss + self.focal_weight * focal_loss
 
