@@ -18,6 +18,7 @@ from monai.transforms import (
     RandGaussianNoised,
     RandRotated,
     RandZoomd,
+    SqueezeDimd,
 )
 
 logger = logging.getLogger(__name__)
@@ -134,13 +135,15 @@ def get_train_transforms(
         if temp_num_classes is None or temp_num_classes <= 0:
             temp_num_classes = len(label_crop_cfg.get("ratios", [0.05, 0.2, 0.4, 0.35]))
 
-        # Label already has channel dimension [1, H, W, D] from line 79
+        # Label has channel dimension [1, H, W, D] from line 79
+        # Squeeze it before one-hot encoding, then re-add after argmax
         transforms.extend(
             [
-                AsDiscreted(keys="label", to_onehot=temp_num_classes),
+                SqueezeDimd(keys="label", dim=0),  # [1,H,W,D] → [H,W,D]
+                AsDiscreted(keys="label", to_onehot=temp_num_classes),  # [H,W,D] → [4,H,W,D]
                 _build_label_crop_transform(label_crop_cfg, roi_size or label_crop_cfg["roi_size"]),
-                AsDiscreted(keys="label", argmax=True),
-                EnsureChannelFirstd(keys="label", channel_dim="no_channel"),
+                AsDiscreted(keys="label", argmax=True),  # [4,224,224,96] → [224,224,96]
+                EnsureChannelFirstd(keys="label", channel_dim="no_channel"),  # [224,224,96] → [1,224,224,96]
             ]
         )
     # If label_crop disabled, label already has channel from line 79, no action needed
