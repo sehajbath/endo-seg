@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 def check_affine_alignment(
     img_nii: nib.Nifti1Image,
     label_nii: nib.Nifti1Image,
-    tolerance: float = 0.01,
+    tolerance: float = 0.05,
 ) -> Tuple[bool, Dict[str, any]]:
     """Check if image and label are aligned in physical space.
 
@@ -108,7 +108,9 @@ def detect_label_sequence(
         logger.warning(f"Failed to load label for {subject_id}: {e}")
         return None
 
-    # Check alignment with each sequence; only accept perfect alignment
+    # Check alignment with each sequence; prefer perfect alignment, otherwise return best partial
+    best_sequence = None
+    best_score = -1
     for seq in sequences:
         img_path = subject_dir / f"{subject_id}_{seq}.nii.gz"
         if not img_path.exists():
@@ -124,10 +126,26 @@ def detect_label_sequence(
                     f"(shape={info['label_shape']})"
                 )
                 return seq  # Perfect match, return immediately
+            # Score alignment (shape + spacing + affine)
+            score = sum([
+                info["shape_match"],
+                info["spacing_match"],
+                info["affine_match"],
+            ])
+            if score > best_score:
+                best_score = score
+                best_sequence = seq
 
         except Exception as e:
             logger.warning(f"Failed to check {seq} for {subject_id}: {e}")
             continue
+
+    # If no perfect match, return best partial match if any criterion matched
+    if best_score > 0 and best_sequence is not None:
+        logger.debug(
+            f"{subject_id}: Label best matches {best_sequence} (score={best_score}/3)"
+        )
+        return best_sequence
 
     logger.warning(f"{subject_id}: Label doesn't align with any sequence")
     return None

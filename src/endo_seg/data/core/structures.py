@@ -119,6 +119,7 @@ def merge_structure_labels(
     label_dict: Dict[str, Optional[np.ndarray]],
     structure_to_index: Optional[Dict[str, int]] = None,
     subject_id: Optional[str] = None,
+    strict_shapes: bool = False,
 ) -> np.ndarray:
     """Merge structure-specific label volumes into a multi-class label map."""
     mapping = structure_to_index or EndoMRIDataInfo.STRUCTURE_CLASS_INDEX
@@ -143,22 +144,17 @@ def merge_structure_labels(
             continue
 
         if label.shape != tuple(shape):
-            if subject_id:
-                logger.warning(
-                    "Label shape mismatch for %s (subject %s) (got %s, expected %s); resizing with nearest neighbor",
-                    struct_name,
-                    subject_id,
-                    label.shape,
-                    tuple(shape),
-                )
+            msg = (
+                f"Label shape mismatch for {struct_name}"
+                + (f" (subject {subject_id})" if subject_id else "")
+                + f" (got {label.shape}, expected {tuple(shape)})"
+            )
+            if strict_shapes:
+                logger.warning(msg + "; skipping structure")
+                continue
             else:
-                logger.warning(
-                    "Label shape mismatch for %s (got %s, expected %s); resizing with nearest neighbor",
-                    struct_name,
-                    label.shape,
-                    tuple(shape),
-                )
-            label = _resize_label(label, shape)
+                logger.warning(msg + "; resizing with nearest neighbor")
+                label = _resize_label(label, shape)
 
         merged[label > 0] = mapping[canonical]
 

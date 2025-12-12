@@ -59,6 +59,7 @@ def compute_patient_label_stats(
     data_root: str,
     dataset_name: str = "D2_TCPW",
     subject_ids: Optional[Sequence[str]] = None,
+    strict_shapes: bool = True,
 ) -> PatientStats:
     """Detect which patients contain ovary/endometrioma annotations."""
 
@@ -85,7 +86,7 @@ def compute_patient_label_stats(
             patient_stats[subject_id] = {"has_ovary": False, "has_endo": False}
             continue
 
-        merged = merge_structure_labels(label_dict, subject_id=subject_id)
+        merged = merge_structure_labels(label_dict, subject_id=subject_id, strict_shapes=strict_shapes)
         patient_stats[subject_id] = {
             "has_ovary": bool(np.any(merged == ovary_idx)),
             "has_endo": bool(np.any(merged == endo_idx)),
