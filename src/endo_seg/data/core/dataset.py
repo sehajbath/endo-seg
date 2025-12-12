@@ -144,6 +144,19 @@ class EndoMRIDataset(Dataset):
             seq_path = data_info.get(f"image_{seq}")
             if seq_path is not None:
                 seq_data, _ = self._load_image(seq_path)
+                if seq_data.shape != image_ref.shape:
+                    # Harmonize shape to reference; prefer preprocessor crop/pad if available
+                    if self.preprocessor is not None:
+                        seq_data = self.preprocessor.crop_or_pad(seq_data, image_ref.shape)
+                    else:
+                        logger.warning(
+                            "Image shape mismatch for %s (subject %s); expected %s got %s. Zero-filling.",
+                            seq,
+                            subject_id,
+                            image_ref.shape,
+                            seq_data.shape,
+                        )
+                        seq_data = np.zeros_like(image_ref)
                 images.append(seq_data)
                 modality_mask.append(1.0)
             else:
