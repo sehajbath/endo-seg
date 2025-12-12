@@ -168,6 +168,9 @@ class EndoMRIDataset(Dataset):
 
         if self.transform is not None:
             sample = self.transform({"image": image_tensor, "label": label_tensor})
+            # RandCropByLabelClassesd returns a list even with num_samples=1
+            if isinstance(sample, list):
+                sample = sample[0]
             image_tensor = sample["image"]
             label_tensor = sample["label"]
 
