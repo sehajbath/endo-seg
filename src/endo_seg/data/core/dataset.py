@@ -90,10 +90,13 @@ class EndoMRIDataset(Dataset):
                 self.rater_id,
             )
 
-            primary_seq = self.sequences[0]
-            if data_dict.get(f"image_{primary_seq}") is None:
-                logger.warning("Primary sequence %s not found for %s", primary_seq, subject_id)
+            # Allow inclusion if any enabled sequence is present
+            available_seqs = [seq for seq in self.sequences if data_dict.get(f"image_{seq}") is not None]
+            if not available_seqs:
+                logger.warning("No configured sequences found for %s", subject_id)
                 continue
+            # Track a reference sequence for shape/spacing
+            data_dict["_ref_seq"] = available_seqs[0]
 
             has_label = any(
                 data_dict.get(f"label_{struct}") is not None for struct in self.structures
@@ -130,11 +133,11 @@ class EndoMRIDataset(Dataset):
         data_info = self.data_index[idx]
         subject_id = data_info["subject_id"]
 
-        # Always try to load the primary sequence first to establish reference shape
-        primary_seq = self.sequences[0]
-        image_path = data_info.get(f"image_{primary_seq}")
+        # Choose reference sequence (first available) to establish shape/spacing
+        ref_seq = data_info.get("_ref_seq", self.sequences[0])
+        image_path = data_info.get(f"image_{ref_seq}")
         if image_path is None:
-            raise ValueError(f"Primary sequence {primary_seq} missing for {subject_id}")
+            raise ValueError(f"No available reference sequence for {subject_id}")
         image_ref, spacing = self._load_image(image_path)
 
         # Build a fixed-channel tensor for all configured sequences, zero-filling missing ones
