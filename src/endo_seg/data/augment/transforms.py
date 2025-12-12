@@ -11,6 +11,7 @@ from monai.transforms import (
     Compose,
     EnsureChannelFirstd,
     EnsureTyped,
+    Lambda,
     Rand3DElasticd,
     RandAdjustContrastd,
     RandCropByLabelClassesd,
@@ -18,7 +19,6 @@ from monai.transforms import (
     RandGaussianNoised,
     RandRotated,
     RandZoomd,
-    SqueezeDimd,
 )
 
 logger = logging.getLogger(__name__)
@@ -136,11 +136,17 @@ def get_train_transforms(
             temp_num_classes = len(label_crop_cfg.get("ratios", [0.05, 0.2, 0.4, 0.35]))
 
         # Label has channel dimension [1, H, W, D] from line 79
-        # Squeeze it before one-hot encoding, then re-add after argmax
+        # Create a debug transform to check shape before to_onehot
+        def debug_label_shape(data):
+            logger.info(f"Label shape before to_onehot: {data['label'].shape}")
+            return data
+
+        transforms.append(Lambda(func=debug_label_shape))
+
+        # to_onehot will remove channel=1 and create [num_classes, H, W, D]
         transforms.extend(
             [
-                SqueezeDimd(keys="label", dim=0),  # [1,H,W,D] → [H,W,D]
-                AsDiscreted(keys="label", to_onehot=temp_num_classes),  # [H,W,D] → [4,H,W,D]
+                AsDiscreted(keys="label", to_onehot=temp_num_classes),  # [1,H,W,D] → [4,H,W,D]
                 _build_label_crop_transform(label_crop_cfg, roi_size or label_crop_cfg["roi_size"]),
                 AsDiscreted(keys="label", argmax=True),  # [4,224,224,96] → [224,224,96]
                 EnsureChannelFirstd(keys="label", channel_dim="no_channel"),  # [224,224,96] → [1,224,224,96]
