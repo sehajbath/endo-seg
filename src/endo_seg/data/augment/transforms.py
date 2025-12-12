@@ -73,8 +73,9 @@ def get_train_transforms(
         falls back to the ROI specified in ``config['label_crop']['roi_size']``.
     """
 
+    # Image already has channel dimension [C, H, W, D] from dataset
+    # Label needs channel dimension added [H, W, D] -> [1, H, W, D]
     transforms: List = [
-        EnsureChannelFirstd(keys="image", channel_dim="no_channel"),
         EnsureChannelFirstd(keys="label", channel_dim="no_channel"),
     ]
 
