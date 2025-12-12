@@ -74,28 +74,11 @@ def get_train_transforms(
     """
 
     # Image already has channel dimension [C, H, W, D] from dataset
-    # Label needs channel dimension added [H, W, D] -> [1, H, W, D]
-    transforms: List = [
-        EnsureChannelFirstd(keys="label", channel_dim="no_channel"),
-    ]
+    # Label is [H, W, D] and must stay 3D for spatial transforms
+    transforms: List = []
 
-    label_crop_cfg = config.get("label_crop", {})
-    if label_crop_cfg.get("enabled"):
-        if roi_size is None and "roi_size" not in label_crop_cfg:
-            raise ValueError("label_crop requires either roi_size argument or roi_size in config")
-        temp_num_classes = label_crop_cfg.get("num_classes")
-        if temp_num_classes is None or temp_num_classes <= 0:
-            temp_num_classes = len(label_crop_cfg.get("ratios", [0.05, 0.2, 0.4, 0.35]))
-
-        transforms.extend(
-            [
-                AsDiscreted(keys="label", to_onehot=temp_num_classes),
-                _build_label_crop_transform(label_crop_cfg, roi_size or label_crop_cfg["roi_size"]),
-                AsDiscreted(keys="label", argmax=True),
-                EnsureChannelFirstd(keys="label", channel_dim="no_channel"),
-            ]
-        )
-
+    # Apply spatial augmentations FIRST while label is still 3D [H, W, D]
+    # Image is [1, H, W, D] which MONAI handles correctly
     flip_prob = config.get("random_flip_prob", 0.0)
     if flip_prob > 0:
         for axis in (0, 1, 2):
@@ -140,6 +123,30 @@ def get_train_transforms(
                 padding_mode="zeros",
             )
         )
+
+    # Now handle label-aware cropping (requires label to have channel dimension)
+    label_crop_cfg = config.get("label_crop", {})
+    if label_crop_cfg.get("enabled"):
+        if roi_size is None and "roi_size" not in label_crop_cfg:
+            raise ValueError("label_crop requires either roi_size argument or roi_size in config")
+        temp_num_classes = label_crop_cfg.get("num_classes")
+        if temp_num_classes is None or temp_num_classes <= 0:
+            temp_num_classes = len(label_crop_cfg.get("ratios", [0.05, 0.2, 0.4, 0.35]))
+
+        # Add channel to label NOW (after spatial transforms)
+        transforms.append(EnsureChannelFirstd(keys="label", channel_dim="no_channel"))
+
+        transforms.extend(
+            [
+                AsDiscreted(keys="label", to_onehot=temp_num_classes),
+                _build_label_crop_transform(label_crop_cfg, roi_size or label_crop_cfg["roi_size"]),
+                AsDiscreted(keys="label", argmax=True),
+                EnsureChannelFirstd(keys="label", channel_dim="no_channel"),
+            ]
+        )
+    else:
+        # No label crop: still need to add channel to label
+        transforms.append(EnsureChannelFirstd(keys="label", channel_dim="no_channel"))
 
     gamma_range = config.get("random_gamma")
     if gamma_range:
