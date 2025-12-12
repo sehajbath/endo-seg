@@ -97,6 +97,32 @@ def get_dataloaders(
             if ds:
                 dataset_map[sid] = ds
 
+    # Auto-detect which sequence labels were annotated on (per-subject)
+    auto_detect_sequences = config.get("auto_detect_sequences", True)
+    sequence_map = {}
+    if auto_detect_sequences and len(sequences) > 1:
+        from .sequence_detector import build_sequence_map
+
+        logger.info("Auto-detecting label-sequence alignment for each subject...")
+
+        all_subjects = splits.get("train", []) + splits.get("val", []) + splits.get("test", [])
+        sequence_map = build_sequence_map(
+            data_root=Path(data_root),
+            subject_ids=all_subjects,
+            sequences=sequences,
+            dataset_name=dataset_name,
+            rater_id=None,  # Will be determined by dataset
+        )
+
+        logger.info(
+            "Sequence auto-detection complete: %d subjects mapped to optimal sequences",
+            len(sequence_map)
+        )
+    elif len(sequences) == 1:
+        logger.info("Only one sequence configured, skipping auto-detection")
+    else:
+        logger.info("Sequence auto-detection disabled (auto_detect_sequences=False)")
+
     datasets = {}
     for split in ("train", "val", "test"):
         datasets[split] = EndoMRIDataset(
@@ -109,6 +135,7 @@ def get_dataloaders(
             transform=train_transform if split == "train" else None,
             cache_data=False,
             dataset_map=dataset_map if dataset_map else None,
+            sequence_map=sequence_map if sequence_map else None,
         )
 
     batch_size = config.get("training", {}).get("batch_size", 2)
@@ -266,6 +293,42 @@ def get_dataloaders_multi_dataset(
         else None
     )
 
+    # Auto-detect which sequence labels were annotated on (per-subject)
+    auto_detect_sequences = config.get("auto_detect_sequences", True)
+    sequence_map = {}
+    if auto_detect_sequences and len(sequences) > 1:
+        from .sequence_detector import build_sequence_map_multi_dataset
+
+        logger.info("Auto-detecting label-sequence alignment for each subject...")
+
+        # Build dataset_map from subject IDs
+        all_subjects = splits.get("train", []) + splits.get("val", []) + splits.get("test", [])
+        temp_dataset_map = {}
+        for sid in all_subjects:
+            if "-" in sid:
+                prefix = sid.split("-")[0]
+                if prefix == "D1":
+                    temp_dataset_map[sid] = "D1_MHS"
+                elif prefix == "D2":
+                    temp_dataset_map[sid] = "D2_TCPW"
+
+        sequence_map = build_sequence_map_multi_dataset(
+            data_root=Path(data_root),
+            subject_ids=all_subjects,
+            sequences=sequences,
+            dataset_map=temp_dataset_map,
+            rater_map={"D1_MHS": "r3", "D2_TCPW": None},
+        )
+
+        logger.info(
+            "Sequence auto-detection complete: %d subjects mapped to optimal sequences",
+            len(sequence_map)
+        )
+    elif len(sequences) == 1:
+        logger.info("Only one sequence configured, skipping auto-detection")
+    else:
+        logger.info("Sequence auto-detection disabled (auto_detect_sequences=False)")
+
     def split_subjects_by_dataset(subject_ids: List[str]) -> Dict[str, List[str]]:
         """Separate subject IDs by dataset based on prefix."""
         dataset_subjects = {ds: [] for ds in datasets}
@@ -305,6 +368,7 @@ def get_dataloaders_multi_dataset(
                 preprocessor=preprocessor,
                 transform=train_transform if split_name == "train" else None,
                 cache_data=False,
+                sequence_map=sequence_map if sequence_map else None,
             )
             split_datasets.append(ds)
             logger.info(

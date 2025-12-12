@@ -49,6 +49,7 @@ class EndoMRIDataset(Dataset):
         rater_id: Optional[str] = None,
         cache_data: bool = False,
         dataset_map: Optional[Dict[str, str]] = None,
+        sequence_map: Optional[Dict[str, str]] = None,
     ):
         self.data_root = Path(data_root)
         self.subject_ids = subject_ids
@@ -62,6 +63,8 @@ class EndoMRIDataset(Dataset):
         self.cache_data = cache_data
         # Optional mapping of subject_id -> dataset_name (for combined splits)
         self.dataset_map = dataset_map or {}
+        # Optional mapping of subject_id -> best sequence for labels
+        self.sequence_map = sequence_map or {}
 
         self.data_index = self._build_data_index()
         self.cache: Optional[Dict[int, Dict[str, torch.Tensor]]] = {} if cache_data else None
@@ -71,6 +74,8 @@ class EndoMRIDataset(Dataset):
         if self.original_structures != self.structures:
             logger.info("Structures (configured): %s", self.original_structures)
         logger.info("Structures (canonical): %s", self.structures)
+        if self.sequence_map:
+            logger.info("Using per-subject sequence selection (%d subjects mapped)", len(self.sequence_map))
 
     def _build_data_index(self) -> List[Dict[str, Path]]:
         data_index: List[Dict[str, Path]] = []
@@ -95,8 +100,24 @@ class EndoMRIDataset(Dataset):
             if not available_seqs:
                 logger.warning("No configured sequences found for %s", subject_id)
                 continue
+
             # Track a reference sequence for shape/spacing
-            data_dict["_ref_seq"] = available_seqs[0]
+            # If sequence_map is provided, use the detected sequence for this subject
+            if subject_id in self.sequence_map:
+                preferred_seq = self.sequence_map[subject_id]
+                if preferred_seq in available_seqs:
+                    data_dict["_ref_seq"] = preferred_seq
+                    logger.debug(
+                        f"Using {preferred_seq} as reference for {subject_id} (label alignment detected)"
+                    )
+                else:
+                    logger.warning(
+                        f"Preferred sequence {preferred_seq} not available for {subject_id}, using {available_seqs[0]}"
+                    )
+                    data_dict["_ref_seq"] = available_seqs[0]
+            else:
+                # No sequence map provided, use first available sequence
+                data_dict["_ref_seq"] = available_seqs[0]
 
             has_label = any(
                 data_dict.get(f"label_{struct}") is not None for struct in self.structures
