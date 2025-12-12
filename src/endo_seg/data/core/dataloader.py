@@ -82,6 +82,9 @@ def get_dataloaders(
         logger.info("Structures (configured): %s", raw_structures)
     logger.info("Segmenting structures (canonical): %s", structures)
 
+    strict_label_shapes = config.get("strict_label_shapes", False)
+    label_resize_tolerance = config.get("label_resize_tolerance", 0.2)
+
     aug_config = config.get("augmentation", {}).get("train", {})
     train_transform = (
         get_train_transforms(aug_config, roi_size=preprocessor.target_size)
@@ -149,6 +152,8 @@ def get_dataloaders(
             cache_data=False,
             dataset_map=dataset_map if dataset_map else None,
             sequence_map=sequence_map if sequence_map else None,
+            strict_label_shapes=strict_label_shapes,
+            label_resize_tolerance=label_resize_tolerance,
         )
 
     batch_size = config.get("training", {}).get("batch_size", 2)
@@ -299,6 +304,9 @@ def get_dataloaders_multi_dataset(
         logger.info("Structures (configured): %s", raw_structures)
     logger.info("Segmenting structures (canonical): %s", structures)
 
+    strict_label_shapes = config.get("strict_label_shapes", False)
+    label_resize_tolerance = config.get("label_resize_tolerance", 0.2)
+
     aug_config = config.get("augmentation", {}).get("train", {})
     train_transform = (
         get_train_transforms(aug_config, roi_size=preprocessor.target_size)
@@ -385,6 +393,8 @@ def get_dataloaders_multi_dataset(
                 transform=train_transform if split_name == "train" else None,
                 cache_data=False,
                 sequence_map=sequence_map if sequence_map else None,
+                strict_label_shapes=strict_label_shapes,
+                label_resize_tolerance=label_resize_tolerance,
             )
             split_datasets.append(ds)
             logger.info(

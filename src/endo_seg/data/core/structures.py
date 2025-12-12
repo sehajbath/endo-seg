@@ -120,6 +120,7 @@ def merge_structure_labels(
     structure_to_index: Optional[Dict[str, int]] = None,
     subject_id: Optional[str] = None,
     strict_shapes: bool = False,
+    resize_tolerance: float = 0.2,
 ) -> np.ndarray:
     """Merge structure-specific label volumes into a multi-class label map."""
     mapping = structure_to_index or EndoMRIDataInfo.STRUCTURE_CLASS_INDEX
@@ -149,7 +150,9 @@ def merge_structure_labels(
                 + (f" (subject {subject_id})" if subject_id else "")
                 + f" (got {label.shape}, expected {tuple(shape)})"
             )
-            if strict_shapes:
+            # Compute relative shape difference; if too large, skip
+            rel_diff = max(abs(a - b) / max(b, 1) for a, b in zip(label.shape, shape))
+            if strict_shapes or rel_diff > resize_tolerance:
                 logger.warning(msg + "; skipping structure")
                 continue
             else:

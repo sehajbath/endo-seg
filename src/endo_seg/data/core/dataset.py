@@ -50,6 +50,8 @@ class EndoMRIDataset(Dataset):
         cache_data: bool = False,
         dataset_map: Optional[Dict[str, str]] = None,
         sequence_map: Optional[Dict[str, str]] = None,
+        strict_label_shapes: bool = False,
+        label_resize_tolerance: float = 0.2,
     ):
         self.data_root = Path(data_root)
         self.subject_ids = subject_ids
@@ -65,6 +67,9 @@ class EndoMRIDataset(Dataset):
         self.dataset_map = dataset_map or {}
         # Optional mapping of subject_id -> best sequence for labels
         self.sequence_map = sequence_map or {}
+        # Control how label shapes are handled
+        self.strict_label_shapes = strict_label_shapes
+        self.label_resize_tolerance = label_resize_tolerance
 
         self.data_index = self._build_data_index()
         self.cache: Optional[Dict[int, Dict[str, torch.Tensor]]] = {} if cache_data else None
@@ -150,7 +155,12 @@ class EndoMRIDataset(Dataset):
         return data
 
     def _merge_labels(self, label_dict: Dict[str, np.ndarray], subject_id: Optional[str]) -> np.ndarray:
-        return merge_structure_labels(label_dict, subject_id=subject_id)
+        return merge_structure_labels(
+            label_dict,
+            subject_id=subject_id,
+            strict_shapes=self.strict_label_shapes,
+            resize_tolerance=self.label_resize_tolerance,
+        )
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         if self.cache_data and self.cache is not None and idx in self.cache:
