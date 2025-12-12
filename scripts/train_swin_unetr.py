@@ -188,6 +188,13 @@ def main() -> None:
     trainer_config["save_frequency"] = config.get("logging", {}).get("save_frequency", 5)
     trainer_config["class_names"] = ["background", "uterus", "ovary", "endometrioma"]
 
+    dataset_map: Dict[str, str] = {}
+    patient_stats = splits.get("patient_stats", {})
+    for sid, stats in patient_stats.items():
+        ds_name = stats.get("dataset")
+        if ds_name:
+            dataset_map[sid] = ds_name
+
     if training_cfg.get("use_class_weights", True):
         class_weights = compute_class_weights(
             data_root=data_root,
@@ -196,6 +203,7 @@ def main() -> None:
             structures=structures,
             dataset_name=dataset_name,
             num_classes=trainer_config["num_classes"],
+            dataset_map=dataset_map if dataset_map else None,
         )
         trainer_config["class_weights"] = class_weights.tolist()
         logger.info("Class weights: %s", trainer_config["class_weights"])

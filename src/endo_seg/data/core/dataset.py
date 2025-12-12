@@ -48,6 +48,7 @@ class EndoMRIDataset(Dataset):
         transform: Optional[Callable] = None,
         rater_id: Optional[str] = None,
         cache_data: bool = False,
+        dataset_map: Optional[Dict[str, str]] = None,
     ):
         self.data_root = Path(data_root)
         self.subject_ids = subject_ids
@@ -59,6 +60,8 @@ class EndoMRIDataset(Dataset):
         self.transform = transform
         self.rater_id = rater_id
         self.cache_data = cache_data
+        # Optional mapping of subject_id -> dataset_name (for combined splits)
+        self.dataset_map = dataset_map or {}
 
         self.data_index = self._build_data_index()
         self.cache: Optional[Dict[int, Dict[str, torch.Tensor]]] = {} if cache_data else None
@@ -71,9 +74,10 @@ class EndoMRIDataset(Dataset):
 
     def _build_data_index(self) -> List[Dict[str, Path]]:
         data_index: List[Dict[str, Path]] = []
-        dataset_path = self.data_root / self.dataset_name
 
         for subject_id in self.subject_ids:
+            dataset_for_subject = self.dataset_map.get(subject_id, self.dataset_name)
+            dataset_path = self.data_root / dataset_for_subject
             subject_dir = dataset_path / subject_id
             if not subject_dir.exists():
                 logger.warning("Subject directory not found: %s", subject_dir)
@@ -126,24 +130,27 @@ class EndoMRIDataset(Dataset):
         data_info = self.data_index[idx]
         subject_id = data_info["subject_id"]
 
+        # Always try to load the primary sequence first to establish reference shape
         primary_seq = self.sequences[0]
-        image_path = data_info[f"image_{primary_seq}"]
-        image, spacing = self._load_image(image_path)
+        image_path = data_info.get(f"image_{primary_seq}")
+        if image_path is None:
+            raise ValueError(f"Primary sequence {primary_seq} missing for {subject_id}")
+        image_ref, spacing = self._load_image(image_path)
 
-        images = [image]
-        for seq in self.sequences[1:]:
+        # Build a fixed-channel tensor for all configured sequences, zero-filling missing ones
+        images = []
+        modality_mask: List[float] = []
+        for seq in self.sequences:
             seq_path = data_info.get(f"image_{seq}")
             if seq_path is not None:
                 seq_data, _ = self._load_image(seq_path)
                 images.append(seq_data)
+                modality_mask.append(1.0)
             else:
-                images.append(np.zeros_like(image))
+                images.append(np.zeros_like(image_ref))
+                modality_mask.append(0.0)
 
-        image = (
-            np.stack(images, axis=0)
-            if len(images) > 1
-            else image[np.newaxis, ...]
-        )
+        image = np.stack(images, axis=0)
 
         label_dict: Dict[str, Optional[np.ndarray]] = {}
         for struct in self.structures:
@@ -179,6 +186,7 @@ class EndoMRIDataset(Dataset):
             "label": label_tensor,
             "subject_id": subject_id,
             "spacing": torch.tensor(spacing).float(),
+            "modality_mask": torch.tensor(modality_mask).float(),
         }
 
         if self.cache_data and self.cache is not None:

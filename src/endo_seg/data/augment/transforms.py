@@ -11,6 +11,7 @@ from monai.transforms import (
     Compose,
     EnsureChannelFirstd,
     EnsureTyped,
+    Identity,
     Rand3DElasticd,
     RandAdjustContrastd,
     RandCropByLabelClassesd,
@@ -22,6 +23,27 @@ from monai.transforms import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class ModalityDropoutd:
+    """Randomly zeroes one channel to improve robustness to missing modalities."""
+
+    def __init__(self, keys="image", drop_prob: float = 0.3):
+        self.keys = (keys,) if isinstance(keys, str) else keys
+        self.drop_prob = drop_prob
+
+    def __call__(self, data):
+        import random
+
+        d = dict(data)
+        if random.random() < self.drop_prob:
+            key = self.keys[0]
+            img = d.get(key)
+            if img is not None and img.ndim >= 4:
+                drop_idx = random.randrange(img.shape[0])
+                img[drop_idx] = 0.0
+                d[key] = img
+        return d
 
 
 def _build_label_crop_transform(
@@ -148,6 +170,16 @@ def get_train_transforms(
         ])
     # If label_crop disabled, label already has channel from line 79, no action needed
 
+    # Optional modality dropout (zero out one channel) to improve robustness to missing modalities
+    modality_dropout_cfg = config.get("modality_dropout", {})
+    if modality_dropout_cfg.get("enabled"):
+        transforms.append(
+            ModalityDropoutd(
+                keys="image",
+                drop_prob=modality_dropout_cfg.get("prob", 0.3),
+            )
+        )
+
     gamma_range = config.get("random_gamma")
     if gamma_range:
         transforms.append(
@@ -175,4 +207,4 @@ def get_train_transforms(
     return Compose(transforms)
 
 
-__all__ = ["get_train_transforms"]
+__all__ = ["get_train_transforms", "ModalityDropoutd"]
