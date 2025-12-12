@@ -101,18 +101,31 @@ def get_dataloaders(
     auto_detect_sequences = config.get("auto_detect_sequences", True)
     sequence_map = {}
     if auto_detect_sequences and len(sequences) > 1:
-        from .sequence_detector import build_sequence_map
+        from .sequence_detector import build_sequence_map, build_sequence_map_multi_dataset
 
         logger.info("Auto-detecting label-sequence alignment for each subject...")
 
         all_subjects = splits.get("train", []) + splits.get("val", []) + splits.get("test", [])
-        sequence_map = build_sequence_map(
-            data_root=Path(data_root),
-            subject_ids=all_subjects,
-            sequences=sequences,
-            dataset_name=dataset_name,
-            rater_id=None,  # Will be determined by dataset
-        )
+        if dataset_map:
+            # Optional per-dataset candidate sequences
+            ds_seq_cfg = config.get("dataset_sequences", {})
+            # Normalize keys if provided
+            dataset_sequences = {k: v for k, v in ds_seq_cfg.items()} if ds_seq_cfg else {}
+            sequence_map = build_sequence_map_multi_dataset(
+                data_root=Path(data_root),
+                subject_ids=all_subjects,
+                sequences=sequences,
+                dataset_map=dataset_map,
+                dataset_sequences=dataset_sequences,
+            )
+        else:
+            sequence_map = build_sequence_map(
+                data_root=Path(data_root),
+                subject_ids=all_subjects,
+                sequences=sequences,
+                dataset_name=dataset_name,
+                rater_id=None,  # Will be determined by dataset
+            )
 
         logger.info(
             "Sequence auto-detection complete: %d subjects mapped to optimal sequences",
@@ -312,12 +325,15 @@ def get_dataloaders_multi_dataset(
                 elif prefix == "D2":
                     temp_dataset_map[sid] = "D2_TCPW"
 
+        ds_seq_cfg = config.get("dataset_sequences", {})
+        dataset_sequences = {k: v for k, v in ds_seq_cfg.items()} if ds_seq_cfg else {}
         sequence_map = build_sequence_map_multi_dataset(
             data_root=Path(data_root),
             subject_ids=all_subjects,
             sequences=sequences,
             dataset_map=temp_dataset_map,
             rater_map={"D1_MHS": "r3", "D2_TCPW": None},
+            dataset_sequences=dataset_sequences,
         )
 
         logger.info(

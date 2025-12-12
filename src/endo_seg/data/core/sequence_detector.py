@@ -108,10 +108,7 @@ def detect_label_sequence(
         logger.warning(f"Failed to load label for {subject_id}: {e}")
         return None
 
-    # Check alignment with each sequence
-    best_sequence = None
-    best_score = -1
-
+    # Check alignment with each sequence; only accept perfect alignment
     for seq in sequences:
         img_path = subject_dir / f"{subject_id}_{seq}.nii.gz"
         if not img_path.exists():
@@ -121,13 +118,6 @@ def detect_label_sequence(
             img_nii = nib.load(str(img_path))
             is_aligned, info = check_affine_alignment(img_nii, label_nii)
 
-            # Score alignment (3 points max: shape + spacing + affine)
-            score = sum([
-                info["shape_match"],
-                info["spacing_match"],
-                info["affine_match"],
-            ])
-
             if is_aligned:
                 logger.debug(
                     f"{subject_id}: Label perfectly aligned with {seq} "
@@ -135,20 +125,9 @@ def detect_label_sequence(
                 )
                 return seq  # Perfect match, return immediately
 
-            if score > best_score:
-                best_score = score
-                best_sequence = seq
-
         except Exception as e:
             logger.warning(f"Failed to check {seq} for {subject_id}: {e}")
             continue
-
-    # If no perfect match, return best partial match (if any criterion matched)
-    if best_score > 0:
-        logger.debug(
-            f"{subject_id}: Label best matches {best_sequence} (score={best_score}/3)"
-        )
-        return best_sequence
 
     logger.warning(f"{subject_id}: Label doesn't align with any sequence")
     return None
@@ -211,6 +190,7 @@ def build_sequence_map_multi_dataset(
     sequences: List[str],
     dataset_map: Dict[str, str],
     rater_map: Optional[Dict[str, str]] = None,
+    dataset_sequences: Optional[Dict[str, List[str]]] = None,
 ) -> Dict[str, str]:
     """Build sequence mapping for multi-dataset training.
 
@@ -220,11 +200,13 @@ def build_sequence_map_multi_dataset(
         sequences: List of available sequences
         dataset_map: Mapping of subject_id -> dataset_name
         rater_map: Optional mapping of dataset_name -> rater_id
+        dataset_sequences: Optional mapping of dataset_name -> candidate sequences
 
     Returns:
         Dict mapping subject_id to best sequence
     """
     rater_map = rater_map or {"D1_MHS": "r3", "D2_TCPW": None}
+    dataset_sequences = dataset_sequences or {}
     sequence_map = {}
 
     for subject_id in subject_ids:
@@ -238,10 +220,11 @@ def build_sequence_map_multi_dataset(
             continue
 
         rater_id = rater_map.get(dataset_name)
+        seq_candidates = dataset_sequences.get(dataset_name, sequences)
         best_seq = detect_label_sequence(
             subject_dir,
             subject_id,
-            sequences,
+            seq_candidates,
             dataset_name=dataset_name,
             rater_id=rater_id,
         )

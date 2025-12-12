@@ -101,6 +101,11 @@ class EndoMRIDataset(Dataset):
                 logger.warning("No configured sequences found for %s", subject_id)
                 continue
 
+            # If a sequence_map was provided and this subject is missing, skip
+            if self.sequence_map and subject_id not in self.sequence_map:
+                logger.warning("No aligned sequence detected for %s; skipping subject", subject_id)
+                continue
+
             # Track a reference sequence for shape/spacing
             # If sequence_map is provided, use the detected sequence for this subject
             if subject_id in self.sequence_map:
