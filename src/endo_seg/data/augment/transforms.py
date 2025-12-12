@@ -74,11 +74,12 @@ def get_train_transforms(
     """
 
     # Image already has channel dimension [C, H, W, D] from dataset
-    # Label is [H, W, D] and must stay 3D for spatial transforms
-    transforms: List = []
+    # Label is [H, W, D] - add channel to make it [1, H, W, D] for spatial transforms
+    transforms: List = [
+        EnsureChannelFirstd(keys="label", channel_dim="no_channel"),
+    ]
 
-    # Apply spatial augmentations FIRST while label is still 3D [H, W, D]
-    # Image is [1, H, W, D] which MONAI handles correctly
+    # Apply spatial augmentations with both image and label as 4D [C, H, W, D]
     flip_prob = config.get("random_flip_prob", 0.0)
     if flip_prob > 0:
         for axis in (0, 1, 2):
@@ -133,9 +134,7 @@ def get_train_transforms(
         if temp_num_classes is None or temp_num_classes <= 0:
             temp_num_classes = len(label_crop_cfg.get("ratios", [0.05, 0.2, 0.4, 0.35]))
 
-        # Add channel to label NOW (after spatial transforms)
-        transforms.append(EnsureChannelFirstd(keys="label", channel_dim="no_channel"))
-
+        # Label already has channel dimension [1, H, W, D] from line 79
         transforms.extend(
             [
                 AsDiscreted(keys="label", to_onehot=temp_num_classes),
@@ -144,9 +143,7 @@ def get_train_transforms(
                 EnsureChannelFirstd(keys="label", channel_dim="no_channel"),
             ]
         )
-    else:
-        # No label crop: still need to add channel to label
-        transforms.append(EnsureChannelFirstd(keys="label", channel_dim="no_channel"))
+    # If label_crop disabled, label already has channel from line 79, no action needed
 
     gamma_range = config.get("random_gamma")
     if gamma_range:
