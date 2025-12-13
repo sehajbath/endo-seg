@@ -12,7 +12,6 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from ..core.structures import EndoMRIDataInfo, merge_structure_labels
 from .files import get_subject_data_dict, load_nifti
 
 logger = logging.getLogger(__name__)
@@ -61,16 +60,22 @@ def compute_patient_label_stats(
     subject_ids: Optional[Sequence[str]] = None,
     strict_shapes: bool = True,
 ) -> PatientStats:
-    """Detect which patients contain ovary/endometrioma annotations."""
+    """Detect which patients contain ovary/endometrioma annotations.
+
+    Notes
+    -----
+    UT-EndoMRI labels can be stored on different underlying sequences per structure
+    (e.g., uterus/ovary on T2, endometrioma on T1FS in D1_MHS). These label volumes
+    may therefore have different shapes/affines. For split stratification and sampling
+    we only need label *presence*, so we assess each label volume independently rather
+    than merging them into a single grid.
+    """
 
     dataset_path = Path(data_root) / dataset_name
     if subject_ids is None:
         subject_ids = sorted(
             subject_dir.name for subject_dir in dataset_path.iterdir() if subject_dir.is_dir()
         )
-
-    ovary_idx = EndoMRIDataInfo.structure_to_index("ovary")
-    endo_idx = EndoMRIDataInfo.structure_to_index("endometrioma")
 
     target_structures = ("ovary", "endometrioma")
     patient_stats: PatientStats = {}
@@ -82,14 +87,11 @@ def compute_patient_label_stats(
             continue
 
         label_dict = _load_structure_labels(subject_dir, target_structures)
-        if not label_dict:
-            patient_stats[subject_id] = {"has_ovary": False, "has_endo": False}
-            continue
-
-        merged = merge_structure_labels(label_dict, subject_id=subject_id, strict_shapes=strict_shapes)
+        ovary = label_dict.get("ovary")
+        endo = label_dict.get("endometrioma")
         patient_stats[subject_id] = {
-            "has_ovary": bool(np.any(merged == ovary_idx)),
-            "has_endo": bool(np.any(merged == endo_idx)),
+            "has_ovary": bool(np.any(ovary > 0)) if ovary is not None else False,
+            "has_endo": bool(np.any(endo > 0)) if endo is not None else False,
         }
 
     total_ovary = sum(1 for stats in patient_stats.values() if stats["has_ovary"])
