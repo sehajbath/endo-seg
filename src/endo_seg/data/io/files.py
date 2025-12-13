@@ -186,10 +186,30 @@ def get_subject_data_dict(
         struct_abbrev = EndoMRIDataInfo.get_structure_abbrev(canonical)
         label_file = None
 
-        for lbl_file in files["labels"]:
-            info = parse_filename(lbl_file.name)
-            if info["type"] == struct_abbrev:
-                if rater_id is None or info.get("rater_id") == rater_id:
+        # Rater-agnostic: try specified rater first, then fall back to any available rater
+        raters_to_try = []
+        if rater_id:
+            raters_to_try.append(rater_id)
+        # Add r3, r2, r1 as fallbacks (skip if already in list)
+        for r in ["r3", "r2", "r1"]:
+            if r != rater_id:
+                raters_to_try.append(r)
+
+        # Try specified rater first
+        for rater in raters_to_try:
+            for lbl_file in files["labels"]:
+                info = parse_filename(lbl_file.name)
+                if info["type"] == struct_abbrev and info.get("rater_id") == rater:
+                    label_file = lbl_file
+                    break
+            if label_file is not None:
+                break
+
+        # If still no label, try any rater (for datasets without rater IDs)
+        if label_file is None:
+            for lbl_file in files["labels"]:
+                info = parse_filename(lbl_file.name)
+                if info["type"] == struct_abbrev:
                     label_file = lbl_file
                     break
 

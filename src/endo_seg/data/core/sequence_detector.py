@@ -252,6 +252,7 @@ def detect_structure_sequences(
                         f"{subject_id}/{struct}: Label perfectly aligned with {seq}"
                     )
                     best_seq = seq
+                    best_score = 3  # Perfect match scores 3/3
                     break  # Perfect match
 
                 # Score alignment
@@ -269,7 +270,9 @@ def detect_structure_sequences(
                 continue
 
         if best_seq is not None:
-            structure_sequences[struct] = best_seq
+            # Store using canonical structure name for consistency with dataset
+            canonical = EndoMRIDataInfo.canonical_structure_name(struct)
+            structure_sequences[canonical] = best_seq
             sequence_votes[best_seq] = sequence_votes.get(best_seq, 0) + 1
             logger.debug(f"{subject_id}/{struct}: Best sequence = {best_seq} (score={best_score}/3)")
 
