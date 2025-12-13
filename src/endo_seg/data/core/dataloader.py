@@ -335,13 +335,23 @@ def get_dataloaders_multi_dataset(
 
         ds_seq_cfg = config.get("dataset_sequences", {})
         dataset_sequences = {k: v for k, v in ds_seq_cfg.items()} if ds_seq_cfg else {}
+
+        # Get structures from config for per-structure detection
+        structures_config = config.get("structures", {})
+        structures = [k for k, v in structures_config.items() if v]
+
+        # Enable per-structure detection by default
+        per_structure_detection = config.get("per_structure_detection", True)
+
         sequence_map = build_sequence_map_multi_dataset(
             data_root=Path(data_root),
             subject_ids=all_subjects,
             sequences=sequences,
             dataset_map=temp_dataset_map,
+            structures=structures,
             rater_map={"D1_MHS": "r3", "D2_TCPW": None},
             dataset_sequences=dataset_sequences,
+            per_structure_detection=per_structure_detection,
         )
 
         logger.info(

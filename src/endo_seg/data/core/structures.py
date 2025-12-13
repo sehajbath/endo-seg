@@ -6,9 +6,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
+import nibabel as nib
 import numpy as np
+from nibabel.processing import resample_from_to
 from scipy import ndimage
 
 logger = logging.getLogger(__name__)
@@ -115,14 +117,66 @@ def _resize_label(label: np.ndarray, target_shape: np.ndarray) -> np.ndarray:
     return ndimage.zoom(label, zoom=zoom, order=0, mode="nearest")
 
 
+def resample_label_to_reference(
+    label: np.ndarray,
+    source_affine: np.ndarray,
+    target_affine: np.ndarray,
+    target_shape: Tuple[int, int, int],
+) -> np.ndarray:
+    """Resample label from source sequence space to target sequence space.
+
+    Uses affine transformation to properly handle different voxel sizes and orientations.
+
+    Args:
+        label: Label array from source sequence
+        source_affine: 4x4 affine matrix of source sequence
+        target_affine: 4x4 affine matrix of target (reference) sequence
+        target_shape: Target shape (H, W, D)
+
+    Returns:
+        Resampled label array at target shape
+    """
+    # Create NIfTI object for source label
+    source_nii = nib.Nifti1Image(label.astype(np.int16), source_affine)
+
+    # Create dummy target NIfTI with desired shape/affine
+    target_nii = nib.Nifti1Image(np.zeros(target_shape, dtype=np.int16), target_affine)
+
+    # Resample using nibabel's affine-aware resampling
+    resampled_nii = resample_from_to(
+        source_nii,
+        target_nii,
+        order=0,  # Nearest neighbor for labels
+        mode='constant',
+        cval=0
+    )
+
+    return resampled_nii.get_fdata().astype(label.dtype)
+
+
 def merge_structure_labels(
     label_dict: Dict[str, Optional[np.ndarray]],
     structure_to_index: Optional[Dict[str, int]] = None,
     subject_id: Optional[str] = None,
     strict_shapes: bool = False,
     resize_tolerance: float = 0.2,
+    affine_dict: Optional[Dict[str, np.ndarray]] = None,
+    reference_affine: Optional[np.ndarray] = None,
 ) -> np.ndarray:
-    """Merge structure-specific label volumes into a multi-class label map."""
+    """Merge structure-specific label volumes into a multi-class label map.
+
+    Args:
+        label_dict: Dict mapping structure names to label arrays
+        structure_to_index: Optional mapping from structure name to class index
+        subject_id: Optional subject ID for logging
+        strict_shapes: If True, skip structures with mismatched shapes
+        resize_tolerance: Relative shape tolerance before skipping (if not strict)
+        affine_dict: Optional dict mapping structure names to their affine matrices
+        reference_affine: Optional affine matrix of reference sequence
+
+    Returns:
+        Merged multi-class label array
+    """
     mapping = structure_to_index or EndoMRIDataInfo.STRUCTURE_CLASS_INDEX
 
     shape = None
@@ -145,19 +199,35 @@ def merge_structure_labels(
             continue
 
         if label.shape != tuple(shape):
-            msg = (
-                f"Label shape mismatch for {struct_name}"
-                + (f" (subject {subject_id})" if subject_id else "")
-                + f" (got {label.shape}, expected {tuple(shape)})"
-            )
-            # Compute relative shape difference; if too large, skip
-            rel_diff = max(abs(a - b) / max(b, 1) for a, b in zip(label.shape, shape))
-            if strict_shapes or rel_diff > resize_tolerance:
-                logger.warning(msg + "; skipping structure")
-                continue
+            # Try affine-aware resampling if affine info provided
+            if affine_dict is not None and reference_affine is not None and struct_name in affine_dict:
+                logger.info(
+                    f"Resampling {struct_name}"
+                    + (f" (subject {subject_id})" if subject_id else "")
+                    + f" from {label.shape} to {tuple(shape)} using affine transformation"
+                )
+                label = resample_label_to_reference(
+                    label,
+                    source_affine=affine_dict[struct_name],
+                    target_affine=reference_affine,
+                    target_shape=tuple(shape),
+                )
             else:
-                logger.warning(msg + "; resizing with nearest neighbor")
-                label = _resize_label(label, shape)
+                # Fall back to scipy zoom (legacy behavior)
+                msg = (
+                    f"Label shape mismatch for {struct_name}"
+                    + (f" (subject {subject_id})" if subject_id else "")
+                    + f" (got {label.shape}, expected {tuple(shape)})"
+                )
+                # Compute relative shape difference; if too large, skip
+                rel_diff = max(abs(a - b) / max(b, 1) for a, b in zip(label.shape, shape))
+                if strict_shapes or rel_diff > resize_tolerance:
+                    logger.warning(msg + "; skipping structure")
+                    continue
+                else:
+                    affine_note = " (NO affine)" if affine_dict is not None else ""
+                    logger.warning(msg + f"; resizing with nearest neighbor{affine_note}")
+                    label = _resize_label(label, shape)
 
         merged[label > 0] = mapping[canonical]
 
@@ -167,5 +237,6 @@ def merge_structure_labels(
 __all__ = [
     "EndoMRIDataInfo",
     "canonicalize_structure_list",
+    "resample_label_to_reference",
     "merge_structure_labels",
 ]

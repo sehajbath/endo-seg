@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
+import nibabel as nib
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -114,8 +115,17 @@ class EndoMRIDataset(Dataset):
             # Track a reference sequence for shape/spacing
             # If sequence_map is provided, use the detected sequence for this subject
             if subject_id in self.sequence_map:
-                preferred_seq = self.sequence_map[subject_id]
-                if preferred_seq in available_seqs:
+                seq_info = self.sequence_map[subject_id]
+
+                # Handle per-structure detection (dict) vs legacy (string)
+                if isinstance(seq_info, dict):
+                    # Per-structure detection: use reference_sequence from detection result
+                    preferred_seq = seq_info.get("reference_sequence")
+                else:
+                    # Legacy: sequence_map[subject_id] is the sequence name
+                    preferred_seq = seq_info
+
+                if preferred_seq and preferred_seq in available_seqs:
                     data_dict["_ref_seq"] = preferred_seq
                     logger.debug(
                         f"Using {preferred_seq} as reference for {subject_id} (label alignment detected)"
@@ -150,16 +160,26 @@ class EndoMRIDataset(Dataset):
         spacing = np.abs(np.diag(affine)[:3])
         return data, spacing
 
-    def _load_label(self, file_path: Path) -> np.ndarray:
-        data, _ = load_nifti(str(file_path))
-        return data
+    def _load_label(self, file_path: Path) -> Tuple[np.ndarray, np.ndarray]:
+        """Load label and return data + affine matrix."""
+        data, img = load_nifti(str(file_path))
+        affine = img.affine
+        return data, affine
 
-    def _merge_labels(self, label_dict: Dict[str, np.ndarray], subject_id: Optional[str]) -> np.ndarray:
+    def _merge_labels(
+        self,
+        label_dict: Dict[str, np.ndarray],
+        subject_id: Optional[str],
+        affine_dict: Optional[Dict[str, np.ndarray]] = None,
+        reference_affine: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
         return merge_structure_labels(
             label_dict,
             subject_id=subject_id,
             strict_shapes=self.strict_label_shapes,
             resize_tolerance=self.label_resize_tolerance,
+            affine_dict=affine_dict,
+            reference_affine=reference_affine,
         )
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
@@ -175,6 +195,10 @@ class EndoMRIDataset(Dataset):
         if image_path is None:
             raise ValueError(f"No available reference sequence for {subject_id}")
         image_ref, spacing = self._load_image(image_path)
+
+        # Load reference affine for proper label resampling
+        ref_img = nib.load(str(image_path))
+        reference_affine = ref_img.affine
 
         # Build a fixed-channel tensor for all configured sequences, zero-filling missing ones
         images = []
@@ -212,12 +236,50 @@ class EndoMRIDataset(Dataset):
 
         image = np.stack(images, axis=0)
 
+        # Load labels with per-structure sequence awareness
         label_dict: Dict[str, Optional[np.ndarray]] = {}
-        for struct in self.structures:
-            label_path = data_info.get(f"label_{struct}")
-            label_dict[struct] = self._load_label(label_path) if label_path is not None else None
+        affine_dict: Dict[str, np.ndarray] = {}
 
-        label = self._merge_labels(label_dict, subject_id)
+        # Check if this subject has per-structure detection results
+        if subject_id in self.sequence_map and isinstance(self.sequence_map[subject_id], dict):
+            # Per-structure detection enabled
+            detection = self.sequence_map[subject_id]
+            structure_sequences = detection.get("structure_sequences", {})
+
+            for struct in self.structures:
+                label_path = data_info.get(f"label_{struct}")
+                if label_path is not None:
+                    label_data, label_affine = self._load_label(label_path)
+                    label_dict[struct] = label_data
+                    affine_dict[struct] = label_affine
+
+                    # Log if structure is from different sequence than reference
+                    struct_seq = structure_sequences.get(struct)
+                    if struct_seq and struct_seq != ref_seq:
+                        logger.debug(
+                            f"{subject_id}/{struct}: Loading from {struct_seq}, "
+                            f"will resample to reference {ref_seq}"
+                        )
+                else:
+                    label_dict[struct] = None
+        else:
+            # Legacy single-sequence detection or no detection
+            for struct in self.structures:
+                label_path = data_info.get(f"label_{struct}")
+                if label_path is not None:
+                    label_data, label_affine = self._load_label(label_path)
+                    label_dict[struct] = label_data
+                    affine_dict[struct] = label_affine
+                else:
+                    label_dict[struct] = None
+
+        # Merge labels with affine-aware resampling
+        label = self._merge_labels(
+            label_dict,
+            subject_id,
+            affine_dict=affine_dict if affine_dict else None,
+            reference_affine=reference_affine,
+        )
 
         if self.preprocessor is not None:
             processed_images = []
