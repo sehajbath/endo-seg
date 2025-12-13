@@ -80,23 +80,31 @@ def detect_label_sequence(
         subject_id: Subject ID
         sequences: List of sequences to check (e.g., ["T1FS", "T2"])
         dataset_name: Dataset name for label file naming convention
-        rater_id: Rater ID for D1_MHS (e.g., "r3")
+        rater_id: Rater ID for D1_MHS (e.g., "r3"). If None, tries all available raters.
 
     Returns:
         Sequence name that label aligns with, or None if no match found
     """
-    # Find label file (check most common structures)
+    # Find label file (check most common structures, rater-agnostic for D1_MHS)
     label_file = None
     for struct_abbrev in ["em", "ov", "ut"]:  # endometrioma, ovary, uterus
         if dataset_name == "D1_MHS":
-            suffix = f"_{rater_id}" if rater_id else "_r3"
-            label_path = subject_dir / f"{subject_id}_{struct_abbrev}{suffix}.nii.gz"
+            # Try specified rater first, then fall back to all available raters
+            raters_to_try = [rater_id] if rater_id else ["r3", "r2", "r1"]
+
+            for rater in raters_to_try:
+                label_path = subject_dir / f"{subject_id}_{struct_abbrev}_{rater}.nii.gz"
+                if label_path.exists():
+                    label_file = label_path
+                    break
+
+            if label_file is not None:
+                break
         else:
             label_path = subject_dir / f"{subject_id}_{struct_abbrev}.nii.gz"
-
-        if label_path.exists():
-            label_file = label_path
-            break
+            if label_path.exists():
+                label_file = label_path
+                break
 
     if label_file is None:
         logger.debug(f"No label file found for {subject_id}")
@@ -167,7 +175,7 @@ def detect_structure_sequences(
         sequences: List of sequences to check (e.g., ["T1FS", "T2", "T2FS"])
         structures: List of structures to check (e.g., ["uterus", "ovary", "endometrioma"])
         dataset_name: Dataset name for label file naming convention
-        rater_id: Rater ID for D1_MHS (e.g., "r3")
+        rater_id: Rater ID for D1_MHS (e.g., "r3"). If None, tries all available raters.
 
     Returns:
         Dict with:
@@ -185,14 +193,28 @@ def detect_structure_sequences(
     for struct in structures:
         struct_abbrev = EndoMRIDataInfo.get_structure_abbrev(struct)
 
-        # Find label file for this structure
+        # Find label file for this structure (rater-agnostic for D1_MHS)
+        label_path = None
+        actual_rater = None
+
         if dataset_name == "D1_MHS":
-            suffix = f"_{rater_id}" if rater_id else "_r3"
-            label_path = subject_dir / f"{subject_id}_{struct_abbrev}{suffix}.nii.gz"
+            # Try specified rater first, then fall back to all available raters
+            raters_to_try = [rater_id] if rater_id else ["r3", "r2", "r1"]
+
+            for rater in raters_to_try:
+                candidate_path = subject_dir / f"{subject_id}_{struct_abbrev}_{rater}.nii.gz"
+                if candidate_path.exists():
+                    label_path = candidate_path
+                    actual_rater = rater
+                    if rater != rater_id and rater_id is not None:
+                        logger.debug(f"{subject_id}/{struct}: Using rater {rater} (default {rater_id} not available)")
+                    break
         else:
             label_path = subject_dir / f"{subject_id}_{struct_abbrev}.nii.gz"
+            if not label_path.exists():
+                label_path = None
 
-        if not label_path.exists():
+        if label_path is None or not label_path.exists():
             logger.debug(f"No label file found for {struct} in {subject_id}")
             continue
 
