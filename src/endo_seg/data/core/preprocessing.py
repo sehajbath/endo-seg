@@ -138,6 +138,23 @@ class MRIPreprocessor:
         label_processed = self.preprocess_image(label, original_spacing, is_label=True)
         return image_processed, label_processed
 
+    def preprocess_images_and_label(
+        self,
+        image: np.ndarray,
+        label: np.ndarray,
+        original_spacing: Tuple[float, float, float],
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Preprocess a multi-channel image stack and its label once.
+
+        Labels are resampled a single time; image channels are processed independently.
+        """
+        label_processed = self.preprocess_image(label, original_spacing, is_label=True)
+        processed_channels = [
+            self.preprocess_image(image[c], original_spacing, is_label=False)
+            for c in range(image.shape[0])
+        ]
+        return np.stack(processed_channels, axis=0), label_processed
+
 
 def compute_intensity_statistics(
     images: List[np.ndarray],

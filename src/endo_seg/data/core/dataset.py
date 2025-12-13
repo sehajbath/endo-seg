@@ -8,7 +8,6 @@ import logging
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
-import nibabel as nib
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -53,6 +52,7 @@ class EndoMRIDataset(Dataset):
         sequence_map: Optional[Dict[str, str]] = None,
         strict_label_shapes: bool = False,
         label_resize_tolerance: float = 0.2,
+        missing_modality_value: float = -1.0,
     ):
         self.data_root = Path(data_root)
         self.subject_ids = subject_ids
@@ -71,6 +71,7 @@ class EndoMRIDataset(Dataset):
         # Control how label shapes are handled
         self.strict_label_shapes = strict_label_shapes
         self.label_resize_tolerance = label_resize_tolerance
+        self.missing_modality_value = missing_modality_value
 
         self.data_index = self._build_data_index()
         self.cache: Optional[Dict[int, Dict[str, torch.Tensor]]] = {} if cache_data else None
@@ -154,11 +155,11 @@ class EndoMRIDataset(Dataset):
     def __len__(self) -> int:
         return len(self.data_index)
 
-    def _load_image(self, file_path: Path) -> Tuple[np.ndarray, np.ndarray]:
+    def _load_image(self, file_path: Path) -> Tuple[np.ndarray, np.ndarray, Tuple[float, float, float]]:
         data, img = load_nifti(str(file_path))
         affine = img.affine
-        spacing = np.abs(np.diag(affine)[:3])
-        return data, spacing
+        spacing = tuple(float(v) for v in img.header.get_zooms()[:3])
+        return data, affine, spacing
 
     def _load_label(self, file_path: Path) -> Tuple[np.ndarray, np.ndarray]:
         """Load label and return data + affine matrix."""
@@ -194,11 +195,7 @@ class EndoMRIDataset(Dataset):
         image_path = data_info.get(f"image_{ref_seq}")
         if image_path is None:
             raise ValueError(f"No available reference sequence for {subject_id}")
-        image_ref, spacing = self._load_image(image_path)
-
-        # Load reference affine for proper label resampling
-        ref_img = nib.load(str(image_path))
-        reference_affine = ref_img.affine
+        image_ref, reference_affine, spacing = self._load_image(image_path)
 
         # Build a fixed-channel tensor for all configured sequences, zero-filling missing ones
         images = []
@@ -206,7 +203,8 @@ class EndoMRIDataset(Dataset):
         for seq in self.sequences:
             seq_path = data_info.get(f"image_{seq}")
             if seq_path is not None:
-                seq_data, _ = self._load_image(seq_path)
+                seq_data, _, _ = self._load_image(seq_path)
+                seq_valid = True
                 if seq_data.shape != image_ref.shape:
                     # Harmonize shape to reference; prefer preprocessor crop/pad if available
                     if self.preprocessor is not None:
@@ -220,6 +218,7 @@ class EndoMRIDataset(Dataset):
                             seq_data.shape,
                         )
                         seq_data = np.zeros_like(image_ref)
+                        seq_valid = False
                 if seq_data.shape != image_ref.shape:
                     logger.warning(
                         "Image shape still mismatched for %s (subject %s); forcing zero-fill to %s.",
@@ -228,8 +227,9 @@ class EndoMRIDataset(Dataset):
                         image_ref.shape,
                     )
                     seq_data = np.zeros_like(image_ref)
+                    seq_valid = False
                 images.append(seq_data)
-                modality_mask.append(1.0)
+                modality_mask.append(1.0 if seq_valid else 0.0)
             else:
                 images.append(np.zeros_like(image_ref))
                 modality_mask.append(0.0)
@@ -282,15 +282,9 @@ class EndoMRIDataset(Dataset):
         )
 
         if self.preprocessor is not None:
-            processed_images = []
-            for i in range(image.shape[0]):
-                proc_img, proc_label = self.preprocessor.preprocess_pair(
-                    image[i], label, spacing
-                )
-                processed_images.append(proc_img)
-
-            image = np.stack(processed_images, axis=0)
-            label = proc_label
+            image, label = self.preprocessor.preprocess_images_and_label(
+                image, label, spacing
+            )
 
         image_tensor = torch.from_numpy(image).float()
         label_tensor = torch.from_numpy(label).long()
@@ -302,6 +296,15 @@ class EndoMRIDataset(Dataset):
                 sample = sample[0]
             image_tensor = sample["image"]
             label_tensor = sample["label"]
+
+        # Apply sentinel fill to missing or invalid modalities after transforms
+        if self.missing_modality_value is not None:
+            missing_mask = torch.tensor(modality_mask, device=image_tensor.device) == 0
+            if missing_mask.any():
+                image_tensor = image_tensor.clone()
+                for ch, is_missing in enumerate(missing_mask):
+                    if is_missing:
+                        image_tensor[ch] = self.missing_modality_value
 
         output = {
             "image": image_tensor,

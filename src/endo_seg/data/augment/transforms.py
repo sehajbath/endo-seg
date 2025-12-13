@@ -18,7 +18,7 @@ from monai.transforms import (
     RandFlipd,
     RandGaussianNoised,
     RandRotated,
-    RandZoomd,
+    RandAffined,
     SqueezeDimd,
 )
 
@@ -26,11 +26,12 @@ logger = logging.getLogger(__name__)
 
 
 class ModalityDropoutd:
-    """Randomly zeroes one channel to improve robustness to missing modalities."""
+    """Randomly replaces one channel to improve robustness to missing modalities."""
 
-    def __init__(self, keys="image", drop_prob: float = 0.3):
+    def __init__(self, keys="image", drop_prob: float = 0.3, fill_value: float = -1.0):
         self.keys = (keys,) if isinstance(keys, str) else keys
         self.drop_prob = drop_prob
+        self.fill_value = fill_value
 
     def __call__(self, data):
         import random
@@ -41,7 +42,7 @@ class ModalityDropoutd:
             img = d.get(key)
             if img is not None and img.ndim >= 4:
                 drop_idx = random.randrange(img.shape[0])
-                img[drop_idx] = 0.0
+                img[drop_idx] = self.fill_value
                 d[key] = img
         return d
 
@@ -126,14 +127,15 @@ def get_train_transforms(
         )
 
     if config.get("random_translation", 0) > 0:
+        translate = float(config.get("random_translation", 0))
         transforms.append(
-            RandZoomd(
+            RandAffined(
                 keys=("image", "label"),
-                min_zoom=0.9,
-                max_zoom=1.1,
+                translate_range=(translate, translate, translate),
                 prob=0.5,
-                mode=("trilinear", "nearest"),
-            )
+                padding_mode="border",
+                mode=("bilinear", "nearest"),
+            ),
         )
 
     if config.get("random_elastic_deform", False):
@@ -177,6 +179,7 @@ def get_train_transforms(
             ModalityDropoutd(
                 keys="image",
                 drop_prob=modality_dropout_cfg.get("prob", 0.3),
+                fill_value=modality_dropout_cfg.get("fill_value", -1.0),
             )
         )
 

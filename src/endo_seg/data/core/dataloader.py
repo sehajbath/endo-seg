@@ -26,6 +26,17 @@ from ..io.splits import summarize_split_counts
 logger = logging.getLogger(__name__)
 
 
+def _ordered_sequences(sequence_config: Dict[str, bool]) -> List[str]:
+    """Return enabled sequences in canonical order, appending any unknown ones."""
+    ordered: List[str] = []
+    seq_cfg = sequence_config or {}
+    ordered.extend([s for s in EndoMRIDataInfo.CANONICAL_SEQUENCE_ORDER if seq_cfg.get(s, False)])
+    for seq, enabled in seq_cfg.items():
+        if enabled and seq not in ordered:
+            ordered.append(seq)
+    return ordered
+
+
 def get_dataloaders(
     data_root: str,
     splits: Dict[str, list],
@@ -45,7 +56,7 @@ def get_dataloaders(
         resampling_order=preprocess_config.get("resampling_order", 3),
     )
 
-    sequences = [seq for seq, enabled in config.get("sequences", {}).items() if enabled]
+    sequences = _ordered_sequences(config.get("sequences", {}))
 
     raw_structures = [struct for struct, enabled in config.get("structures", {}).items() if enabled]
     structures = canonicalize_structure_list(raw_structures)
@@ -84,6 +95,8 @@ def get_dataloaders(
 
     strict_label_shapes = config.get("strict_label_shapes", False)
     label_resize_tolerance = config.get("label_resize_tolerance", 0.2)
+    missing_modality_value = config.get("missing_modality_value", -1.0)
+    missing_modality_value = config.get("missing_modality_value", -1.0)
 
     aug_config = config.get("augmentation", {}).get("train", {})
     train_transform = (
@@ -154,6 +167,7 @@ def get_dataloaders(
             sequence_map=sequence_map if sequence_map else None,
             strict_label_shapes=strict_label_shapes,
             label_resize_tolerance=label_resize_tolerance,
+            missing_modality_value=missing_modality_value,
         )
 
     batch_size = config.get("training", {}).get("batch_size", 2)
@@ -265,7 +279,7 @@ def get_dataloaders_multi_dataset(
         resampling_order=preprocess_config.get("resampling_order", 3),
     )
 
-    sequences = [seq for seq, enabled in config.get("sequences", {}).items() if enabled]
+    sequences = _ordered_sequences(config.get("sequences", {}))
 
     raw_structures = [struct for struct, enabled in config.get("structures", {}).items() if enabled]
     structures = canonicalize_structure_list(raw_structures)
@@ -405,6 +419,7 @@ def get_dataloaders_multi_dataset(
                 sequence_map=sequence_map if sequence_map else None,
                 strict_label_shapes=strict_label_shapes,
                 label_resize_tolerance=label_resize_tolerance,
+                missing_modality_value=missing_modality_value,
             )
             split_datasets.append(ds)
             logger.info(

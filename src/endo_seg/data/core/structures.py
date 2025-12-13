@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 class EndoMRIDataInfo:
     """Constants and structure metadata for the UT-EndoMRI dataset."""
 
+    # Canonical modality ordering used for fixed-channel inputs
+    CANONICAL_SEQUENCE_ORDER: Tuple[str, ...] = ("T1", "T1FS", "T2", "T2FS")
+
     STRUCTURE_ABBREV: Dict[str, str] = {
         "uterus": "ut",
         "ovary": "ov",
