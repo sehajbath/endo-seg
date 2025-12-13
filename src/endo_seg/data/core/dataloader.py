@@ -96,7 +96,6 @@ def get_dataloaders(
     strict_label_shapes = config.get("strict_label_shapes", False)
     label_resize_tolerance = config.get("label_resize_tolerance", 0.2)
     missing_modality_value = config.get("missing_modality_value", -1.0)
-    missing_modality_value = config.get("missing_modality_value", -1.0)
 
     aug_config = config.get("augmentation", {}).get("train", {})
     train_transform = (
@@ -320,6 +319,7 @@ def get_dataloaders_multi_dataset(
 
     strict_label_shapes = config.get("strict_label_shapes", False)
     label_resize_tolerance = config.get("label_resize_tolerance", 0.2)
+    missing_modality_value = config.get("missing_modality_value", -1.0)
 
     aug_config = config.get("augmentation", {}).get("train", {})
     train_transform = (
