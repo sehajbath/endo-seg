@@ -90,7 +90,12 @@ def detect_label_sequence(
     for struct_abbrev in ["em", "ov", "ut"]:  # endometrioma, ovary, uterus
         if dataset_name == "D1_MHS":
             # Try specified rater first, then fall back to all available raters
-            raters_to_try = [rater_id] if rater_id else ["r3", "r2", "r1"]
+            raters_to_try = []
+            if rater_id:
+                raters_to_try.append(rater_id)
+            for r in ["r3", "r2", "r1"]:
+                if r != rater_id:
+                    raters_to_try.append(r)
 
             for rater in raters_to_try:
                 label_path = subject_dir / f"{subject_id}_{struct_abbrev}_{rater}.nii.gz"
@@ -199,7 +204,12 @@ def detect_structure_sequences(
 
         if dataset_name == "D1_MHS":
             # Try specified rater first, then fall back to all available raters
-            raters_to_try = [rater_id] if rater_id else ["r3", "r2", "r1"]
+            raters_to_try = []
+            if rater_id:
+                raters_to_try.append(rater_id)
+            for r in ["r3", "r2", "r1"]:
+                if r != rater_id:
+                    raters_to_try.append(r)
 
             for rater in raters_to_try:
                 candidate_path = subject_dir / f"{subject_id}_{struct_abbrev}_{rater}.nii.gz"
