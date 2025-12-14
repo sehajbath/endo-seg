@@ -101,3 +101,6 @@ scripts/check_affine_alignment.py
 scripts/diagnose_label_misalignment.py
 scripts/diagnose_misalignment_colab.py
 scripts/diagnose_t1fs_label_alignment.py
+*.json
+*.npz
+*.npz
