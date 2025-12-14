@@ -1,17 +1,24 @@
-# Uncertainty-Aware Transformer Models for Pelvic MRI Segmentation in Endometriosis
+# Uncertainty-Aware Multi‑Modal SwinUNETR for UT‑EndoMRI Pelvic Segmentation
 
-Deep learning models for pelvic MRI segmentation in endometriosis with uncertainty quantification using Transformer architectures.
+This repository contains an end‑to‑end training pipeline for pelvic MRI segmentation on **UT‑EndoMRI** using a MONAI **SwinUNETR** backbone, with utilities for uncertainty‑aware inference.
 
-## Project Overview
+## Project Overview (Current State)
 
-This project extends the work from [Liang et al. (2025)](https://www.nature.com/articles/s41597-025-05623-3) by developing uncertainty-aware Transformer-based segmentation models for the UT-EndoMRI dataset.
+This project builds on UT‑EndoMRI (Liang et al., 2025) and focuses on **multi‑modal** training across **D1_MHS + D2_TCPW** while handling real‑world missing modalities and label/sequence misalignment.
 
-**Key Features:**
-- Uncertainty quantification using Monte Carlo Dropout, Deep Ensembles, and Evidential Learning
-- Transformer-based architecture (Swin UNETR) for improved global context
-- Multi-structure segmentation (uterus, ovaries, endometriomas)
-- Comprehensive preprocessing and augmentation pipeline
-- Correlation analysis between uncertainty and inter-rater disagreement
+**What’s implemented and actively used**
+- **Multi‑modal SwinUNETR** training with **fixed** `in_channels=4` and canonical modality order: `T1, T1FS, T2, T2FS`
+- **Missing modality support** per patient via **sentinel fill** (`missing_modality_value`, default `-1.0`) + `modality_mask`
+- **Per‑subject label↔sequence alignment detection** (optional) with **per‑structure** detection and a voted reference sequence
+- **Affine‑aware label resampling** when labels are annotated in different sequence spaces
+- Two‑stage recipe used in the notebook:
+  - **Stage 1 pretrain** (3‑class: background/uterus/ovary)
+  - **Stage 2 finetune** (4‑class: + endometrioma)
+
+## Documentation
+
+- `UPDATED_PIPELINE_DATA_FLOW.md` — report‑ready end‑to‑end data flow (splits → dataset → transforms → training)
+- `notebooks/swin_unetr_colab.ipynb` — reference run pipeline (D1+D2, multi‑modal, pretrain → finetune)
 
 ## Installation
 
@@ -89,7 +96,7 @@ data/raw/UT-EndoMRI/
 ### 2. Create Data Splits
 
 ```bash
-# Create train/val/test splits using paper's split
+# Create train/val/test splits for a single dataset (D2_TCPW example)
 python scripts/create_splits.py \
     --data_root data/raw/UT-EndoMRI \
     --dataset D2_TCPW \
@@ -106,25 +113,18 @@ python scripts/create_splits.py \
     --seed 42
 ```
 
-### 3. Explore the Dataset
-
-```bash
-# Run exploratory data analysis
-python scripts/explore_data.py \
-    --data_root data/raw/UT-EndoMRI \
-    --dataset both \
-    --output_dir data/eda_results
-
-# This will print statistics about:
-# - Number of subjects, sequences, structures
-# - Image dimensions and spacing
-# - Label volumes and distribution
-# - Missing data analysis
-```
-
 ## Usage
 
-### Basic Dataset Loading
+### Quick Start (Notebook, D1+D2 Multi‑Modal)
+
+The most up‑to‑date reference pipeline is the notebook:
+- `notebooks/swin_unetr_colab.ipynb`
+
+It builds combined D1+D2 splits, constructs multi‑dataset dataloaders, and runs:
+- Stage 1 pretraining (uterus+ovary)
+- Stage 2 finetuning (+endometrioma)
+
+### Basic Dataset Loading (Single Dataset)
 
 ```python
 from endo_seg.data import EndoMRIDataset, MRIPreprocessor
@@ -145,10 +145,12 @@ preprocessor = MRIPreprocessor(
 train_dataset = EndoMRIDataset(
     data_root="data/raw/UT-EndoMRI",
     subject_ids=splits['train'],
-    sequences=['T2FS'],  # T2-weighted fat suppression
+    # Multi-modal runs use the canonical order: ["T1","T1FS","T2","T2FS"]
+    sequences=['T2FS'],
     structures=['uterus', 'ovary', 'endometrioma'],
     dataset_name="D2_TCPW",
-    preprocessor=preprocessor
+    preprocessor=preprocessor,
+    missing_modality_value=-1.0,
 )
 
 # Get a sample
@@ -156,108 +158,53 @@ sample = train_dataset[0]
 print(f"Image shape: {sample['image'].shape}")  # (C, H, W, D)
 print(f"Label shape: {sample['label'].shape}")  # (H, W, D)
 print(f"Subject ID: {sample['subject_id']}")
+print(f"Modality mask: {sample['modality_mask']}")  # 1=present+valid, 0=missing/invalid
 ```
 
-### Data Preprocessing
+### Training (CLI, Single Dataset)
 
-```python
-from endo_seg.data import MRIPreprocessor
-import numpy as np
+`scripts/train_swin_unetr.py` supports end‑to‑end training driven by YAML config (single dataset):
 
-# Initialize preprocessor
-preprocessor = MRIPreprocessor(
-    target_spacing=(5.0, 5.0, 5.0),
-    target_size=(128, 128, 32),
-    intensity_clip_percentiles=(1, 99),
-    normalize_method="min_max"
-)
-
-# Preprocess image-label pair
-image = np.random.randn(100, 100, 20)  # Example
-label = np.random.randint(0, 4, (100, 100, 20))
-original_spacing = (1.5, 1.5, 3.0)
-
-processed_img, processed_lbl = preprocessor.preprocess_pair(
-    image, label, original_spacing
-)
+```bash
+python scripts/train_swin_unetr.py --config configs/config.yaml --run-name swin_unetr_run
 ```
 
-## Dataset Information
+For combined D1+D2 multi‑modal training, use `notebooks/swin_unetr_colab.ipynb` as the reference pipeline.
 
-### UT-EndoMRI Dataset Details
+### Key Multi‑Modal Concepts
 
-**Dataset 1 (D1_MHS):**
-- 51 subjects from multiple centers
-- Multi-rater annotations (up to 3 raters)
-- Multiple MRI scanners (GE, Philips, Siemens)
-- Field strengths: 1.5T and 3T
-- Sequences: T2-weighted, T1-weighted fat suppression
+**Canonical channel order**
+- Multi‑modal training assumes channels are always ordered as: `T1, T1FS, T2, T2FS`.
 
-**Dataset 2 (D2_TCPW):**
-- 81-82 subjects from single center
-- Single rater annotation
-- Philips Ingenia 1.5T scanner
-- Sequences: T1, T1FS, T2, T2FS
-- 12 subjects with endometriomas
+**Missing modalities**
+- Per patient, any missing/invalid modality channel is filled with a constant sentinel
+  (`missing_modality_value`, default `-1.0`) and recorded in `modality_mask`.
 
-**Structures:**
-- Uterus (ut)
-- Ovary (ov)
-- Endometrioma (em)
-- Cyst (cy)
-- Cul-de-sac (cds)
+**Label/sequence alignment**
+- When enabled, the pipeline can auto‑detect which image sequence each label aligns to and means labels can be resampled into a reference space using affine information.
 
-**Key Findings from Paper:**
-- Inter-rater agreement (Krippendorff's α): 0.73 for uterus, 0.46 for ovaries
-- Average DSC: 0.73 ± 0.18 for uterus, 0.48 ± 0.24 for ovaries
-- Baseline nnU-Net: 0.272 DSC for ovaries
-- RAovSeg: 0.290 DSC for ovaries
+## Configuration Files
+
+- `configs/config.yaml` — baseline config for CLI training
+- `configs/pretrain_uterus_ovary.yaml` — stage‑1 style pretraining template
+- `configs/finetune_endometrioma.yaml` — stage‑2 style finetuning template
+- `configs/model_config.yaml` — model defaults
 
 ## Project Structure
 
 ```
 endo-seg/
-├── configs/              # Configuration files
-├── data/                 # Data directory (add to .gitignore)
-├── src/endo_seg/        # Installable package
-│   ├── data/            # Data loading, preprocessing augmentation
-|   ├──config/           # Configuration loading and management utilities
-│   ├── models/          # Metrics and (future) architectures
-│   ├── training/        # Training scaffolding
-│   ├── inference/       # Inference + uncertainty entry points
-│   ├── eval/            # Evaluation/reporting helpers
-│   └── utils/           # Logging, checkpoints, misc utilities
-├── scripts/             # Executable scripts
-├── notebooks/           # Jupyter notebooks
-├── experiments/         # Experiment outputs
-└── tests/              # Unit tests
+├── configs/              # YAML configs
+├── data/                 # Data directory (not committed)
+├── notebooks/            # Reference notebooks (Colab pipeline)
+├── scripts/              # CLI utilities and training entrypoints
+├── src/endo_seg/         # Installable package
+│   ├── config/           # Config loading/merging
+│   ├── data/             # IO, datasets, preprocessing, augmentation
+│   ├── models/           # SwinUNETR wrapper + utilities
+│   └── training/         # Training loops, losses, metrics, checkpointing
+└── experiments/          # Output checkpoints/logs
 ```
-
-## Next Steps
-
-After completing Phase 1 setup:
-
-1. **Phase 2:** Implement Transformer architecture (Swin UNETR)
-2. **Phase 3:** Add uncertainty quantification (MC Dropout, Ensembles)
-3. **Phase 4:** Training and evaluation
-
-## Training Swin UNETR (UT-EndoMRI)
-
-1. Generate (or refresh) a stratified patient split:
-   ```bash
-   python scripts/create_splits.py --data_root data/raw/UT-EndoMRI --dataset D2_TCPW \
-       --output data/splits/D2_TCPW_strat_seed42.json --stratified
-   ```
-   Pass `--no-stratified` if you want a purely random split or `--use_paper_split` to
-   reproduce the RAovSeg paper protocol.
-2. Launch end-to-end training with the new pipeline (foreground-biased sampling,
-   class-weighted Dice+CE, ovary/endometrioma-focused validation metric):
-   ```bash
-   python scripts/train_swin_unetr.py --config configs/config.yaml --run-name swin_strat
-   ```
-   The script automatically resolves the split file (or uses `--splits-file`), computes
-   patient label statistics, constructs MONAI dataloaders, and emits checkpoints in
-   `experiments/checkpoints/<run-name>`.
 
 ## License
 
