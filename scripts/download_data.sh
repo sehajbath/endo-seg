@@ -132,9 +132,5 @@ echo -e "\n${GREEN}========================================${NC}"
 echo -e "${GREEN}Download and setup complete!${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo -e "\nDataset location: ${EXTRACT_DIR}"
-echo -e "\nNext steps:"
-echo "  1. Create data splits: python scripts/create_splits.py"
-echo "  2. Explore dataset: python scripts/explore_data.py"
-echo "  3. Start preprocessing: python scripts/preprocess_data.py"
 
 exit 0

@@ -1,4 +1,4 @@
-# Uncertainty-Aware Multi‑Modal SwinUNETR for UT‑EndoMRI Pelvic Segmentation
+# Multi‑Modal SwinUNETR for UT‑EndoMRI Pelvic Segmentation
 
 This repository contains an end‑to‑end training pipeline for pelvic MRI segmentation on **UT‑EndoMRI** using a MONAI **SwinUNETR** backbone, with utilities for uncertainty‑aware inference.
 
@@ -9,7 +9,7 @@ This project builds on UT‑EndoMRI (Liang et al., 2025) and focuses on **multi�
 **What’s implemented and actively used**
 - **Multi‑modal SwinUNETR** training with **fixed** `in_channels=4` and canonical modality order: `T1, T1FS, T2, T2FS`
 - **Missing modality support** per patient via **sentinel fill** (`missing_modality_value`, default `-1.0`) + `modality_mask`
-- **Per‑subject label↔sequence alignment detection** (optional) with **per‑structure** detection and a voted reference sequence
+- **Per‑subject label↔sequence alignment detection** with **per‑structure** detection and a voted reference sequence
 - **Affine‑aware label resampling** when labels are annotated in different sequence spaces
 - Two‑stage recipe used in the notebook:
   - **Stage 1 pretrain** (3‑class: background/uterus/ovary)
@@ -17,15 +17,13 @@ This project builds on UT‑EndoMRI (Liang et al., 2025) and focuses on **multi�
 
 ## Documentation
 
-- `UPDATED_PIPELINE_DATA_FLOW.md` — report‑ready end‑to‑end data flow (splits → dataset → transforms → training)
 - `notebooks/swin_unetr_colab.ipynb` — reference run pipeline (D1+D2, multi‑modal, pretrain → finetune)
 
 ## Installation
 
 ### Prerequisites
 - Python 3.9 or higher
-- NVIDIA GPU with CUDA support (recommended: 24GB+ VRAM)
-- 50GB+ free disk space for dataset
+- NVIDIA GPU with CUDA support (recommended: 40GB VRAM)
 
 ### Option 1: Using Conda (Recommended)
 
@@ -62,7 +60,7 @@ pip install -e .
 
 ## Dataset Setup
 
-### 1. Download UT-EndoMRI Dataset
+### Download UT-EndoMRI Dataset
 
 Download the dataset from Zenodo:
 - **Link:** https://zenodo.org/records/15750762
@@ -91,26 +89,6 @@ data/raw/UT-EndoMRI/
 │   ├── D2-001/
 │   └── ...
 └── SiteScannerInfo.csv
-```
-
-### 2. Create Data Splits
-
-```bash
-# Create train/val/test splits for a single dataset (D2_TCPW example)
-python scripts/create_splits.py \
-    --data_root data/raw/UT-EndoMRI \
-    --dataset D2_TCPW \
-    --output data/splits/split_info.json \
-    --use_paper_split
-
-# Or create custom random splits
-python scripts/create_splits.py \
-    --data_root data/raw/UT-EndoMRI \
-    --dataset D2_TCPW \
-    --train_ratio 0.7 \
-    --val_ratio 0.15 \
-    --test_ratio 0.15 \
-    --seed 42
 ```
 
 ## Usage
@@ -161,13 +139,7 @@ print(f"Subject ID: {sample['subject_id']}")
 print(f"Modality mask: {sample['modality_mask']}")  # 1=present+valid, 0=missing/invalid
 ```
 
-### Training (CLI, Single Dataset)
-
-`scripts/train_swin_unetr.py` supports end‑to‑end training driven by YAML config (single dataset):
-
-```bash
-python scripts/train_swin_unetr.py --config configs/config.yaml --run-name swin_unetr_run
-```
+### Training 
 
 For combined D1+D2 multi‑modal training, use `notebooks/swin_unetr_colab.ipynb` as the reference pipeline.
 

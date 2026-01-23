@@ -3,7 +3,7 @@
 # Purpose: Train 3-class model (background, uterus, ovary) to learn:
 #   - Pelvic anatomy and MRI contrast patterns
 #   - Spatial context for where endometriomas occur
-#   - Progressive learning: large (uterus) → medium (ovary) → small (endo)
+#   - Progressive learning: large (uterus) to medium (ovary) to small (endo)
 #
 # Dataset: D2_TCPW - 49 training subjects (100% have uterus, 80% have ovary)
 # Expected Performance: Uterus Dice >0.90, Ovary Dice >0.75
@@ -39,7 +39,7 @@ splits:
   stratified: true
   use_paper_split: false
 
-# ✅ STAGE 1: Only uterus + ovary (3-class problem)
+# STAGE 1: Only uterus + ovary (3-class problem)
 structures:
   uterus: true
   ovaries: true
@@ -54,23 +54,23 @@ sequences:
   T2: false
   T2FS: true  # Single modality for now
 
-# ✅ FIX 1: Increase preprocessing size to enable actual cropping
+
 preprocessing:
-  target_spacing: [1.5, 1.5, 2.5]  # Fine resolution (from Colab)
-  target_size: [320, 320, 128]  # ✅ INCREASED from [224, 224, 96]
+  target_spacing: [1.5, 1.5, 2.5] 
+  target_size: [320, 320, 128]  
   intensity_clip_percentiles: [1, 99]
   normalize_method: "min_max"
   resampling_order: 3
 
-# ✅ FIX 2: Augmentation with actual cropping
+
 augmentation:
   train:
     label_crop:
       enabled: true
-      roi_size: [224, 224, 96]  # ✅ Now smaller than target_size → actual cropping
-      ratios: [0.1, 0.4, 0.5]  # ✅ 10% bg, 40% uterus, 50% ovary
-      num_classes: 3  # ✅ 3 classes for pretraining
-      num_samples: 4  # ✅ More crops per subject for diversity
+      roi_size: [224, 224, 96]  
+      ratios: [0.1, 0.4, 0.5]  
+      num_classes: 3  
+      num_samples: 4  
       allow_smaller: true
     random_rotation: 20  # degrees
     random_translation: 15  # pixels
@@ -83,17 +83,17 @@ augmentation:
   test:
     enabled: false
 
-# ✅ FIX 3: Training configuration optimized for pretraining
+
 training:
-  batch_size: 2  # ✅ Increased from 1 if memory allows
+  batch_size: 2  
   num_workers: 4
   epochs: 100  # Expected 50-100 epochs for convergence
-  learning_rate: 0.0002  # ✅ Slightly higher (2e-4) for pretraining from scratch
+  learning_rate: 0.0002  # Slightly higher (2e-4) for pretraining from scratch
   optimizer: "AdamW"
   weight_decay: 0.00001
   scheduler: "cosine"
   warmup_epochs: 10
-  priority_classes: [1, 2]  # ✅ Track both uterus + ovary
+  priority_classes: [1, 2]  # Track both uterus + ovary
   use_class_weights: true
 
   # Subject sampling (less critical for pretraining since most have ovary)
@@ -102,12 +102,11 @@ training:
     ovary_weight: 2.0
     default_weight: 1.0
 
-  # ✅ FIX 4: Loss function configuration
   loss_type: "dice_ce"  # Standard Dice+CE (can try "generalized_dice")
   use_generalized_dice: false  # Set true for better class imbalance handling
-  dice_weight: 0.7  # ✅ Dice dominant
-  ce_weight: 0.3  # ✅ CE helps with class balance
-  class_weights: [0.01, 1.0, 3.0]  # ✅ [bg, uterus, ovary] - ovary weighted higher
+  dice_weight: 0.7  # Dice dominant
+  ce_weight: 0.3  # CE helps with class balance
+  class_weights: [0.01, 1.0, 3.0]  # [bg, uterus, ovary] - ovary weighted higher
 
   # Early stopping
   early_stopping:
@@ -137,7 +136,7 @@ mixed_precision: true
 
 # Model (implicit - defined in notebook/script)
 model:
-  num_classes: 3  # ✅ background, uterus, ovary
+  num_classes: 3  # background, uterus, ovary
   in_channels: 1  # T2FS only
   feature_size: 48
   drop_rate: 0.1
@@ -149,10 +148,3 @@ model:
 inference:
   sw_batch_size: 2
   infer_overlap: 0.5
-
-# ✅ SUCCESS CRITERIA for Stage 1:
-# - Uterus Dice > 0.90
-# - Ovary Dice > 0.75
-# - Training loss < 0.15
-# - Validation Dice stable and increasing
-# - Model converges within 50-100 epochs

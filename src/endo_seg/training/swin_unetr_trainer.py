@@ -65,9 +65,6 @@ class DiceCEWithWeights(nn.Module):
     ) -> None:
         super().__init__()
 
-        # CRITICAL FIX: Remove squared_pred=True to preserve gradient signal for rare classes
-        # For rare classes (endometriomas ~1% of voxels), squaring predictions (e.g., 0.2^2 = 0.04)
-        # effectively removes gradient signal, preventing learning
         if use_generalized_dice:
             from monai.losses import GeneralizedDiceLoss
             self.dice = GeneralizedDiceLoss(
@@ -78,7 +75,7 @@ class DiceCEWithWeights(nn.Module):
             self.dice = DiceLoss(
                 to_onehot_y=True,
                 softmax=True,
-                squared_pred=False,  # ✅ FIXED: Linear predictions
+                squared_pred=False,  # Linear predictions
                 smooth_nr=1e-5,
                 smooth_dr=1e-5,
             )
@@ -141,7 +138,7 @@ class FocalDiceCELoss(nn.Module):
 
     def forward(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         dice_loss = self.dice_focal(logits, labels)
-        focal_loss = self.focal(logits, labels)  # Use labels directly, don't squeeze!
+        focal_loss = self.focal(logits, labels) 
 
         return self.dice_weight * dice_loss + self.focal_weight * focal_loss
 
@@ -175,7 +172,7 @@ def build_loss_and_metrics(config: Dict) -> Tuple[nn.Module, DiceMetric, AsDiscr
             focal_weight=focal_weight,
         )
     else:
-        # Standard Dice + CE loss (for pretraining or general use)
+        # Standard Dice + CE loss
         use_generalized_dice = config.get("use_generalized_dice", False)
         dice_weight = config.get("dice_weight", 0.7)
         ce_weight = config.get("ce_weight", 0.3)

@@ -150,7 +150,7 @@ def get_train_transforms(
             )
         )
 
-    # Now handle label-aware cropping (requires label to have channel dimension)
+    # label-aware cropping (requires label to have channel dimension)
     label_crop_cfg = config.get("label_crop", {})
     if label_crop_cfg.get("enabled"):
         if roi_size is None and "roi_size" not in label_crop_cfg:
@@ -160,17 +160,17 @@ def get_train_transforms(
             temp_num_classes = len(label_crop_cfg.get("ratios", [0.05, 0.2, 0.4, 0.35]))
 
         # Label has channel dimension [1, H, W, D] from line 79
-        # AsDiscreted(to_onehot) handles [1,H,W,D] → [4,H,W,D] correctly
-        # AsDiscreted(argmax) uses keepdim=True → [4,H,W,D] → [1,H,W,D]
+        # AsDiscreted(to_onehot) handles [1,H,W,D] -> [4,H,W,D] correctly
+        # AsDiscreted(argmax) uses keepdim=True -> [4,H,W,D] -> [1,H,W,D]
         # Need to squeeze before adding channel back
         transforms.extend([
             AsDiscreted(keys="label", to_onehot=temp_num_classes),  # [1,H,W,D] → [4,H,W,D]
             _build_label_crop_transform(label_crop_cfg, roi_size or label_crop_cfg["roi_size"]),
-            AsDiscreted(keys="label", argmax=True),  # [4,224,224,96] → [1,224,224,96] (keepdim!)
-            SqueezeDimd(keys="label", dim=0),  # [1,224,224,96] → [224,224,96]
-            EnsureChannelFirstd(keys="label", channel_dim="no_channel"),  # [224,224,96] → [1,224,224,96]
+            AsDiscreted(keys="label", argmax=True),  # [4,224,224,96] -> [1,224,224,96] (keepdim)
+            SqueezeDimd(keys="label", dim=0),  # [1,224,224,96] -> [224,224,96]
+            EnsureChannelFirstd(keys="label", channel_dim="no_channel"),  # [224,224,96] -> [1,224,224,96]
         ])
-    # If label_crop disabled, label already has channel from line 79, no action needed
+    # If label_crop disabled, label already has channel from line 79
 
     # Optional modality dropout (zero out one channel) to improve robustness to missing modalities
     modality_dropout_cfg = config.get("modality_dropout", {})
